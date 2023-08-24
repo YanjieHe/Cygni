@@ -1,6 +1,7 @@
 file(GLOB
     SOURCES
     ${PROJECT_SOURCE_DIR}/src/*.cpp
+    ${PROJECT_SOURCE_DIR}/src/Expressions/*.cpp
     ${PROJECT_SOURCE_DIR}/src/LexicalAnalysis/*.cpp
     ${PROJECT_SOURCE_DIR}/src/SyntaxAnalysis/*.cpp
     ${PROJECT_SOURCE_DIR}/src/Utility/*.cpp)

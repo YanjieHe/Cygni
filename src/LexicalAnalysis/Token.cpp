@@ -27,6 +27,8 @@ std::unordered_map<std::u32string, TokenTag> Token::keywords = {
     {U"return", TokenTag::Return},
     {U"true", TokenTag::True},
     {U"false", TokenTag::False},
+    {U"and", TokenTag::And},
+    {U"or", TokenTag::Or},
     {U"while", TokenTag::While},
     {U"module", TokenTag::Module},
     {U"package", TokenTag::Package},
