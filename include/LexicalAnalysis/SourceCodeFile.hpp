@@ -7,11 +7,14 @@ namespace Cygni {
 namespace LexicalAnalysis {
 
 class SourceCodeFile {
- public:
-  std::string filePath;
+private:
+  std::string fileName;
 
-  SourceCodeFile() : filePath() {}
-  SourceCodeFile(const std::string& filePath) : filePath{filePath} {}
+public:
+  SourceCodeFile() : fileName() {}
+  SourceCodeFile(const std::string &filePath) : fileName{filePath} {}
+
+  const std::string &FileName() const { return fileName; }
 };
 
 }; /* namespace LexicalAnalysis */

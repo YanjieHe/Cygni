@@ -48,10 +48,16 @@ ExpPtr Parser::Statement() {
     return IfStatement();
   case TokenTag::While:
     return WhileStatement();
-  default:
+  case TokenTag::Var: {
+    auto variableDeclaration = VariableDeclarationStatement();
+    Match(TokenTag::Semicolon);
+    return variableDeclaration;
+  }
+  default: {
     auto expression = ParseAssign();
     Match(TokenTag::Semicolon);
     return expression;
+  }
   }
 }
 
@@ -180,19 +186,19 @@ ExpPtr Parser::ParseUnary() {
     auto x = ParseUnary();
     return expressionFactory.Create<UnaryExpression>(
         Pos(start), ExpressionType::UnaryPlus, x,
-        typeFactory.CreateBasicType(TypeCode::Unknown));
+        TypeFactory::CreateBasicType(TypeCode::Unknown));
   } else if (Look().tag == TokenTag::Subtract) {
     Advance();
     auto x = ParseUnary();
     return expressionFactory.Create<UnaryExpression>(
         Pos(start), ExpressionType::UnaryMinus, x,
-        typeFactory.CreateBasicType(TypeCode::Unknown));
+        TypeFactory::CreateBasicType(TypeCode::Unknown));
   } else if (Look().tag == TokenTag::Not) {
     Advance();
     auto x = ParseUnary();
     return expressionFactory.Create<UnaryExpression>(
         Pos(start), ExpressionType::Not, x,
-        typeFactory.CreateBasicType(TypeCode::Unknown));
+        TypeFactory::CreateBasicType(TypeCode::Unknown));
   } else {
     return ParsePostfix();
   }
@@ -232,6 +238,12 @@ ExpPtr Parser::ParseFactor() {
     Advance();
     return expressionFactory.Create<ConstantExpression>(Pos(start), v,
                                                         TypeCode::Float64);
+  } else if (Look().tag == TokenTag::Character) {
+    std::u32string v = Look().text;
+    const Token &start = Look();
+    Advance();
+    return expressionFactory.Create<ConstantExpression>(Pos(start), v,
+                                                        TypeCode::Char);
   } else if (Look().tag == TokenTag::String) {
     std::u32string v = Look().text;
     const Token &start = Look();
@@ -253,7 +265,7 @@ ExpPtr Parser::ParseFactor() {
     const Token &start = Look();
     Advance();
     return expressionFactory.Create<ParameterExpression>(
-        Pos(start), name, typeFactory.CreateBasicType(TypeCode::Unknown));
+        Pos(start), name, TypeFactory::CreateBasicType(TypeCode::Unknown));
   } else {
     auto sv = magic_enum::enum_name(Look().tag);
     std::string lookTagStr(sv.begin(), sv.end());
@@ -275,8 +287,7 @@ ExpPtr Parser::ParseBlock() {
     expressions.push_back(Statement());
   }
   Match(TokenTag::RightBrace);
-  return expressionFactory.Create<BlockExpression>(
-      Pos(start), expressions, std::vector<ParameterExpression *>{});
+  return expressionFactory.Create<BlockExpression>(Pos(start), expressions);
 }
 
 ExpPtr Parser::IfStatement() {
@@ -297,7 +308,7 @@ ExpPtr Parser::IfStatement() {
     }
   } else {
     auto empty = expressionFactory.Create<DefaultExpression>(
-        Pos(Look()), typeFactory.CreateBasicType(TypeCode::Unknown));
+        Pos(Look()), TypeFactory::CreateBasicType(TypeCode::Unknown));
     return expressionFactory.Create<ConditionalExpression>(
         Pos(start), condition, ifTrue, empty);
   }
@@ -308,12 +319,23 @@ ExpPtr Parser::WhileStatement() {
   Match(TokenTag::While);
   Match(TokenTag::LeftParenthesis);
   auto empty = expressionFactory.Create<DefaultExpression>(
-      Pos(start), typeFactory.CreateBasicType(TypeCode::Unknown));
+      Pos(start), TypeFactory::CreateBasicType(TypeCode::Unknown));
   auto condition = ParseOr();
   Match(TokenTag::RightParenthesis);
   auto body = ParseBlock();
   return expressionFactory.Create<LoopExpression>(Pos(start), empty, condition,
                                                   body);
+}
+
+ExpPtr Parser::VariableDeclarationStatement() {
+  const Token &start = Look();
+  Match(TokenTag::Var);
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Match(TokenTag::Assign);
+  auto initializer = ParseOr();
+
+  return expressionFactory.Create<VariableDeclarationExpression>(
+      Pos(start), name, initializer);
 }
 
 std::vector<ExpPtr> Parser::ParseArguments() {

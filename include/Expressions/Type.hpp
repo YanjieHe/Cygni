@@ -90,10 +90,10 @@ public:
 
 class ArrayType : public Type {
 private:
-  Type *elementType;
+  const Type *elementType;
 
 public:
-  explicit ArrayType(Type *elementType) : elementType{elementType} {}
+  explicit ArrayType(const Type *elementType) : elementType{elementType} {}
 
   TypeCode GetTypeCode() const override { return TypeCode::Array; }
 
@@ -140,6 +140,7 @@ public:
   static bool IsBasicType(TypeCode typeCode);
   static bool AreTypesEqual(const Type *a, const Type *b);
 
+  ArrayType* CreateArrayType(const Type* elementType);
   const Type *CreateUnionType(const Type *a, const Type *b);
   CallableType *CreateCallableType(std::vector<const Type *> arguments,
                                    const Type *returnType);
