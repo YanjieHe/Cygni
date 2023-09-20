@@ -12,7 +12,7 @@ namespace SyntaxAnalysis {
 using LexicalAnalysis::Token;
 
 using ExpPtr = Expressions::Expression *;
-using TypePtr = Expressions::Type*;
+using TypePtr = Expressions::Type *;
 
 class Parser {
 private:
@@ -70,6 +70,8 @@ public:
   ExpPtr IfStatement();
 
   ExpPtr WhileStatement();
+
+  ExpPtr VariableDeclarationStatement();
 
   std::vector<ExpPtr> ParseArguments();
 

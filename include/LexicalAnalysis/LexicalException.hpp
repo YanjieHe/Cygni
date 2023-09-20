@@ -31,7 +31,7 @@ class LexicalException {
     auto actualLine = std::to_string(line + 1);
     auto actualColumn = std::to_string(column + 1);
     return Format(U"File: {} Syntax Error: ({}, {}) {} ",
-                  sourceCodeFile->filePath, actualLine, actualColumn, message);
+                  sourceCodeFile->FileName(), actualLine, actualColumn, message);
   }
 };
 

@@ -37,6 +37,7 @@ enum class ExpressionType {
   Default = 24,
   UnaryPlus = 25,
   UnaryMinus = 26,
+  VariableDeclaration,
 };
 
 class Expression {
@@ -119,6 +120,26 @@ public:
   const Type *GetType() const { return type; }
 };
 
+class VariableDeclarationExpression : public Expression {
+private:
+  std::u32string name;
+  Expression *initializer;
+
+public:
+  VariableDeclarationExpression(SourceRange sourceRange,
+                                const std::u32string &name,
+                                Expression *initializer)
+      : Expression(sourceRange), name(name), initializer(initializer) {}
+
+  ExpressionType NodeType() const override {
+    return ExpressionType::VariableDeclaration;
+  }
+
+  const std::u32string &Name() const { return name; }
+
+  const Expression *Initializer() const { return initializer; }
+};
+
 class BlockExpression : public Expression {
 private:
   std::vector<Expression *> expressions;
@@ -126,18 +147,12 @@ private:
 
 public:
   BlockExpression(SourceRange sourceRange,
-                  const std::vector<Expression *> &expressions,
-                  const std::vector<ParameterExpression *> &variables)
-      : Expression(sourceRange), expressions{expressions},
-        variables{variables} {}
+                  const std::vector<Expression *> &expressions)
+      : Expression(sourceRange), expressions{expressions} {}
 
   ExpressionType NodeType() const override { return ExpressionType::Block; }
 
   const std::vector<Expression *> &Expressions() const { return expressions; }
-
-  const std::vector<ParameterExpression *> &GetVariables() const {
-    return variables;
-  }
 };
 
 class ConditionalExpression : public Expression {

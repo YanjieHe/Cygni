@@ -88,6 +88,10 @@ bool TypeFactory::AreTypesEqual(const Type *a, const Type *b) {
   }
 }
 
+ArrayType *TypeFactory::CreateArrayType(const Type *elementType) {
+  return static_cast<ArrayType *>(CreateType(new ArrayType(elementType)));
+}
+
 const Type *TypeFactory::CreateUnionType(const Type *a, const Type *b) {
   if (AreTypesEqual(a, b)) {
     return a;
