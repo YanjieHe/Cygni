@@ -73,9 +73,15 @@ public:
 
   ExpPtr VariableDeclarationStatement();
 
+  ExpPtr FunctionDeclarationStatement();
+
   std::vector<ExpPtr> ParseArguments();
 
   ExpPtr ParseArgument();
+
+  Expressions::ParameterExpression* ParseParameter();
+
+  TypePtr ParseType();
 };
 
 }; /* namespace SyntaxAnalysis */

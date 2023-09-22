@@ -196,18 +196,22 @@ public:
 
 class LambdaExpression : public Expression {
 private:
+  std::u32string name;
   Expression *body;
   std::vector<ParameterExpression *> parameters;
   Type *returnType;
 
 public:
-  LambdaExpression(SourceRange sourceRange, Expression *body,
+  LambdaExpression(SourceRange sourceRange, std::u32string name,
+                   Expression *body,
                    const std::vector<ParameterExpression *> &parameters,
                    Type *returnType)
-      : Expression(sourceRange), body{body}, parameters{parameters},
+      : Expression(sourceRange), name{name}, body{body}, parameters{parameters},
         returnType{returnType} {}
 
   ExpressionType NodeType() const override { return ExpressionType::Lambda; }
+
+  const std::u32string& Name() const { return name; }
 
   const Expression *Body() const { return body; }
 
