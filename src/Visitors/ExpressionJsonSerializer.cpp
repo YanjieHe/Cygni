@@ -112,6 +112,7 @@ Json ExpressionJsonSerializer::VisitCall(const CallExpression *node) {
 Json ExpressionJsonSerializer::VisitLambda(const LambdaExpression *node) {
   Json json;
   json["NodeType"] = magic_enum::enum_name<ExpressionType>(node->NodeType());
+  json["Name"] = Utility::UTF32ToUTF8(node->Name());
   json["Parameters"] = Json::array();
   for (const auto &param : node->Parameters()) {
     json["Parameters"].push_back(Visit(param));

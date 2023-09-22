@@ -226,6 +226,8 @@ ExpPtr Parser::ParseFactor() {
     ExpPtr x = ParseOr();
     Match(TokenTag::RightParenthesis);
     return x;
+  } else if (Look().tag == TokenTag::LeftBrace) {
+    return ParseBlock();
   } else if (Look().tag == TokenTag::Integer) {
     std::u32string v = Look().text;
     const Token &start = Look();
@@ -338,6 +340,32 @@ ExpPtr Parser::VariableDeclarationStatement() {
       Pos(start), name, initializer);
 }
 
+ExpPtr Parser::FunctionDeclarationStatement() {
+  const Token &start = Look();
+  Match(TokenTag::Func);
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Match(TokenTag::LeftParenthesis);
+
+  bool isFirstParameter = true;
+  std::vector<ParameterExpression *> parameters;
+  while (Look().tag != TokenTag::RightParenthesis) {
+    if (isFirstParameter) {
+      parameters.push_back(ParseParameter());
+      isFirstParameter = false;
+    } else {
+      Match(TokenTag::Comma);
+      parameters.push_back(ParseParameter());
+    }
+  }
+  Match(TokenTag::RightParenthesis);
+  Match(TokenTag::Colon);
+  TypePtr returnType = ParseType();
+  ExpPtr body = ParseBlock();
+
+  return expressionFactory.Create<LambdaExpression>(Pos(start), name, body,
+                                                    parameters, returnType);
+}
+
 std::vector<ExpPtr> Parser::ParseArguments() {
   vector<ExpPtr> arguments;
   Match(TokenTag::LeftParenthesis);
@@ -357,6 +385,41 @@ std::vector<ExpPtr> Parser::ParseArguments() {
 ExpPtr Parser::ParseArgument() {
   ExpPtr value = ParseOr();
   return value;
+}
+
+Expressions::ParameterExpression *Parser::ParseParameter() {
+  const Token &start = Look();
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Match(TokenTag::Colon);
+  TypePtr type = ParseType();
+
+  return expressionFactory.Create<ParameterExpression>(Pos(start), name, type);
+}
+
+TypePtr Parser::ParseType() {
+  std::u32string name = Match(TokenTag::Identifier).text;
+  if (name == U"Int") {
+    return TypeFactory::CreateBasicType(TypeCode::Int32);
+  } else if (name == U"Long") {
+    return TypeFactory::CreateBasicType(TypeCode::Int64);
+  } else if (name == U"Bool") {
+    return TypeFactory::CreateBasicType(TypeCode::Boolean);
+  } else if (name == U"Float") {
+    return TypeFactory::CreateBasicType(TypeCode::Float32);
+  } else if (name == U"Double") {
+    return TypeFactory::CreateBasicType(TypeCode::Float64);
+  } else if (name == U"Char") {
+    return TypeFactory::CreateBasicType(TypeCode::Char);
+  } else if (name == U"String") {
+    return TypeFactory::CreateBasicType(TypeCode::String);
+  } else {
+    /* TODO */
+    throw ParserException(__FILE__, __LINE__,
+                          SourceRange(document, Look().line, Look().column,
+                                      Look().line,
+                                      Look().column + Look().text.size()),
+                          "This type is not supported.", nullptr);
+  }
 }
 
 }; /* namespace SyntaxAnalysis */
