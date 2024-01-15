@@ -62,7 +62,8 @@ std::unordered_map<std::u32string, TokenTag> Token::operators = {
     {U";", TokenTag::Semicolon},
     {U"=", TokenTag::Assign},
     {U"=>", TokenTag::GoesTo},
-    {U"@", TokenTag::At}};
+    {U"@", TokenTag::At},
+    {U"::", TokenTag::ScopeResolutionOperator}};
 
 Json Token::ToJson() const {
   return {{"line", line},

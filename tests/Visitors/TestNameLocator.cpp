@@ -55,8 +55,8 @@ TEST_CASE("test variable locating", "[Variable]") {
   }
 
   Parser parser(tokens, sourceCodeFile);
-  auto exp = parser.FunctionDeclarationStatement();
-  TypeChecker typeChecker;
+  auto exp = parser.FunctionDeclarationStatement({});
+  TypeChecker typeChecker(parser.GetNamespaceFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -68,7 +68,7 @@ TEST_CASE("test variable locating", "[Variable]") {
   REQUIRE(callableType->GetReturnType()->GetTypeCode() == TypeCode::Int32);
 
   Scope<NameInfo> nameScope;
-  NameLocator nameLocator;
+  NameLocator nameLocator(parser.GetNamespaceFactory());
   nameLocator.Visit(exp, &nameScope);
 
   bool checkedX = false;
@@ -80,16 +80,16 @@ TEST_CASE("test variable locating", "[Variable]") {
           static_cast<const ParameterExpression *>(item.first);
 
       if (parameter->Name() == U"x") {
-        REQUIRE(item.second.kind == LocationKind::FunctionVariable);
-        REQUIRE(item.second.number == 0);
+        REQUIRE(item.second.Kind() == LocationKind::FunctionVariable);
+        REQUIRE(item.second.Number() == 0);
         checkedX = true;
       } else if (parameter->Name() == U"y") {
-        REQUIRE(item.second.kind == LocationKind::FunctionVariable);
-        REQUIRE(item.second.number == 1);
+        REQUIRE(item.second.Kind() == LocationKind::FunctionVariable);
+        REQUIRE(item.second.Number() == 1);
         checkedY = true;
       } else if (parameter->Name() == U"z") {
-        REQUIRE(item.second.kind == LocationKind::FunctionVariable);
-        REQUIRE(item.second.number == 2);
+        REQUIRE(item.second.Kind() == LocationKind::FunctionVariable);
+        REQUIRE(item.second.Number() == 2);
         checkedZ = true;
       }
     }

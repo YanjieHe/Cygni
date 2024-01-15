@@ -6,6 +6,8 @@
 #include "Utility/UTF32Functions.hpp"
 #include "SyntaxAnalysis/ParserException.hpp"
 
+#include <spdlog/spdlog.h>
+
 using std::unordered_map;
 using std::vector;
 
@@ -21,7 +23,9 @@ using Utility::Format;
 
 Parser::Parser(std::vector<Token> tokens,
                std::shared_ptr<SourceCodeFile> document)
-    : tokens{tokens}, document{document}, offset{0} {}
+    : tokens{tokens}, document{document}, offset{0} {
+  namespaceStack.push(namespaceFactory.GetRoot());
+}
 
 const Token &Parser::Match(TokenTag tag) {
   if (tag == Look().tag) {
@@ -207,12 +211,38 @@ ExpPtr Parser::ParseUnary() {
 ExpPtr Parser::ParsePostfix() {
   auto x = ParseFactor();
   while (Look().tag == TokenTag::LeftParenthesis ||
-         Look().tag == TokenTag::LeftBracket || Look().tag == TokenTag::Dot) {
+         Look().tag == TokenTag::LeftBracket || Look().tag == TokenTag::Dot ||
+         Look().tag == TokenTag::ScopeResolutionOperator) {
     const Token &start = Look();
 
     if (Look().tag == TokenTag::LeftParenthesis) {
       auto arguments = ParseArguments();
       x = expressionFactory.Create<CallExpression>(Pos(start), x, arguments);
+    } else if (Look().tag == TokenTag::ScopeResolutionOperator) {
+      if (x->NodeType() == ExpressionType::Parameter) {
+        auto parameter = static_cast<ParameterExpression *>(x);
+        std::vector<std::u32string> prefix;
+        std::u32string name = parameter->Name();
+        while (Look().tag == TokenTag::ScopeResolutionOperator) {
+          Match(TokenTag::ScopeResolutionOperator);
+          prefix.push_back(name);
+          name = Match(TokenTag::Identifier).text;
+        }
+        x = expressionFactory.Create<ParameterExpression>(
+            Pos(start), prefix, name,
+            TypeFactory::CreateBasicType(TypeCode::Unknown));
+      } else {
+        auto sv = magic_enum::enum_name(Look().tag);
+        std::string lookTagStr(sv.begin(), sv.end());
+        throw ParserException(
+            __FILE__, __LINE__,
+            SourceRange(document, Look().line, Look().column, Look().line,
+                        Look().column + Look().text.size()),
+            Utility::UTF32ToUTF8(
+                Format(U"Unexpected token type: '{}'. Expecting Identifier.",
+                       lookTagStr)),
+            nullptr);
+      }
     } else {
       /* TODO: '[' and '.' */
     }
@@ -229,28 +259,30 @@ ExpPtr Parser::ParseFactor() {
   } else if (Look().tag == TokenTag::LeftBrace) {
     return ParseBlock();
   } else if (Look().tag == TokenTag::Integer) {
-    std::u32string v = Look().text;
+    std::u32string text = Look().text;
     const Token &start = Look();
     Advance();
-    return expressionFactory.Create<ConstantExpression>(Pos(start), v,
+    int32_t i = stoi(Utility::UTF32ToUTF8(text));
+    return expressionFactory.Create<ConstantExpression>(Pos(start), i,
                                                         TypeCode::Int32);
   } else if (Look().tag == TokenTag::Float) {
-    std::u32string v = Look().text;
+    std::u32string text = Look().text;
     const Token &start = Look();
     Advance();
-    return expressionFactory.Create<ConstantExpression>(Pos(start), v,
+    double_t d = stod(Utility::UTF32ToUTF8(text));
+    return expressionFactory.Create<ConstantExpression>(Pos(start), d,
                                                         TypeCode::Float64);
   } else if (Look().tag == TokenTag::Character) {
-    std::u32string v = Look().text;
+    std::u32string text = Look().text;
     const Token &start = Look();
     Advance();
-    return expressionFactory.Create<ConstantExpression>(Pos(start), v,
-                                                        TypeCode::Char);
+    return expressionFactory.Create<ConstantExpression>(
+        Pos(start), text.front(), TypeCode::Char);
   } else if (Look().tag == TokenTag::String) {
-    std::u32string v = Look().text;
+    std::u32string text = Look().text;
     const Token &start = Look();
     Advance();
-    return expressionFactory.Create<ConstantExpression>(Pos(start), v,
+    return expressionFactory.Create<ConstantExpression>(Pos(start), text,
                                                         TypeCode::String);
   } else if (Look().tag == TokenTag::True) {
     const Token &start = Look();
@@ -310,7 +342,7 @@ ExpPtr Parser::IfStatement() {
     }
   } else {
     auto empty = expressionFactory.Create<DefaultExpression>(
-        Pos(Look()), TypeFactory::CreateBasicType(TypeCode::Unknown));
+        Pos(Look()), TypeFactory::CreateBasicType(TypeCode::Empty));
     return expressionFactory.Create<ConditionalExpression>(
         Pos(start), condition, ifTrue, empty);
   }
@@ -329,18 +361,27 @@ ExpPtr Parser::WhileStatement() {
                                                   body);
 }
 
-ExpPtr Parser::VariableDeclarationStatement() {
+Expressions::VariableDeclarationExpression *
+Parser::VariableDeclarationStatement() {
   const Token &start = Look();
   Match(TokenTag::Var);
   std::u32string name = Match(TokenTag::Identifier).text;
+  Type *type;
+  if (Look().tag == TokenTag::Colon) {
+    Match(TokenTag::Colon);
+    type = ParseType();
+  } else {
+    type = TypeFactory::CreateBasicType(TypeCode::Unknown);
+  }
   Match(TokenTag::Assign);
   auto initializer = ParseOr();
 
   return expressionFactory.Create<VariableDeclarationExpression>(
-      Pos(start), name, initializer);
+      Pos(start), name, type, initializer);
 }
 
-ExpPtr Parser::FunctionDeclarationStatement() {
+Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(
+    const std::vector<Annotation> &annotations) {
   const Token &start = Look();
   Match(TokenTag::Func);
   std::u32string name = Match(TokenTag::Identifier).text;
@@ -360,10 +401,19 @@ ExpPtr Parser::FunctionDeclarationStatement() {
   Match(TokenTag::RightParenthesis);
   Match(TokenTag::Colon);
   TypePtr returnType = ParseType();
-  ExpPtr body = ParseBlock();
+  if (Look().tag == TokenTag::Semicolon) {
+    ExpPtr body =
+        expressionFactory.Create<DefaultExpression>(Pos(Look()), returnType);
+    Match(TokenTag::Semicolon);
 
-  return expressionFactory.Create<LambdaExpression>(Pos(start), name, body,
-                                                    parameters, returnType);
+    return expressionFactory.Create<LambdaExpression>(
+        Pos(start), name, body, parameters, returnType, annotations);
+  } else {
+    ExpPtr body = ParseBlock();
+
+    return expressionFactory.Create<LambdaExpression>(
+        Pos(start), name, body, parameters, returnType, annotations);
+  }
 }
 
 std::vector<ExpPtr> Parser::ParseArguments() {
@@ -412,6 +462,8 @@ TypePtr Parser::ParseType() {
     return TypeFactory::CreateBasicType(TypeCode::Char);
   } else if (name == U"String") {
     return TypeFactory::CreateBasicType(TypeCode::String);
+  } else if (name == U"Void") {
+    return TypeFactory::CreateBasicType(TypeCode::Empty);
   } else {
     /* TODO */
     throw ParserException(__FILE__, __LINE__,
@@ -420,6 +472,103 @@ TypePtr Parser::ParseType() {
                                       Look().column + Look().text.size()),
                           "This type is not supported.", nullptr);
   }
+}
+
+void Parser::ParseNamespace() {
+  Namespace *top = namespaceStack.top();
+
+  while (Look().tag == TokenTag::Module) {
+    Match(TokenTag::Module);
+    std::u32string name = Match(TokenTag::Identifier).text;
+    Match(TokenTag::LeftBrace);
+
+    namespaceFactory.Insert(top, {name});
+    Namespace *current = namespaceFactory.Search(top, {name});
+    namespaceStack.push(current);
+
+    while (Look().tag != TokenTag::RightBrace) {
+      switch (Look().tag) {
+      case TokenTag::Var: {
+        VariableDeclarationExpression *varDecl = VariableDeclarationStatement();
+        current->GlobalVariables().AddItem(varDecl->Name(), varDecl);
+        break;
+      }
+      case TokenTag::Func: {
+        LambdaExpression *lambda = FunctionDeclarationStatement({});
+        current->Functions().AddItem(lambda->Name(), lambda);
+        break;
+      }
+      case TokenTag::Module: {
+        ParseNamespace();
+        break;
+      }
+      case TokenTag::At: {
+        std::vector<Annotation> annotations = ParseAnnotations();
+        if (Look().tag == TokenTag::Func) {
+          LambdaExpression *lambda = FunctionDeclarationStatement(annotations);
+          current->Functions().AddItem(lambda->Name(), lambda);
+        } else {
+          throw ParserException(__FILE__, __LINE__,
+                                SourceRange(document, Look().line,
+                                            Look().column, Look().line,
+                                            Look().column + Look().text.size()),
+                                "Expecting a function definition.", nullptr);
+        }
+        break;
+      }
+      default: {
+        throw ParserException(
+            __FILE__, __LINE__,
+            SourceRange(document, Look().line, Look().column, Look().line,
+                        Look().column + Look().text.size()),
+            "Unexpected token 'tag' encountered while parsing "
+            "the module. Expected 'var' or 'func'.",
+            nullptr);
+      }
+      }
+    }
+    Match(TokenTag::RightBrace);
+
+    namespaceStack.pop();
+  }
+}
+
+AnnotationArgument Parser::ParseAnnotationArgument() {
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Match(TokenTag::Assign);
+  /* TODO: support other compile-time constants. */
+  std::u32string value = Match(TokenTag::String).text;
+
+  return AnnotationArgument(name, value);
+}
+
+Annotation Parser::ParseAnnotation() {
+  Match(TokenTag::At);
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Match(TokenTag::LeftParenthesis);
+  std::vector<AnnotationArgument> arguments;
+  bool isFirstArgument = true;
+  while (Look().tag != TokenTag::RightParenthesis) {
+    if (isFirstArgument) {
+      arguments.push_back(ParseAnnotationArgument());
+      isFirstArgument = false;
+    } else {
+      Match(TokenTag::Comma);
+      arguments.push_back(ParseAnnotationArgument());
+    }
+  }
+  Match(TokenTag::RightParenthesis);
+
+  return Annotation(name, arguments);
+}
+
+std::vector<Annotation> Parser::ParseAnnotations() {
+  std::vector<Annotation> annotations;
+  while (Look().tag == TokenTag::At) {
+    annotations.push_back(ParseAnnotation());
+  }
+
+  return annotations;
 }
 
 }; /* namespace SyntaxAnalysis */

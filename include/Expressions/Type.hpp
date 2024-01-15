@@ -134,6 +134,7 @@ private:
 
 public:
   TypeFactory() = default;
+  TypeFactory(const TypeFactory&) = delete;
   ~TypeFactory();
 
   static Type *CreateBasicType(TypeCode typeCode);

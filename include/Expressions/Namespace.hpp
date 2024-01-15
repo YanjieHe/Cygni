@@ -2,6 +2,7 @@
 #define CYGNI_EXPRESSIONS_NAMESPACE_HPP
 
 #include "Expressions/Expression.hpp"
+#include "Utility/OrderPreservingMap.hpp"
 
 namespace Cygni {
 namespace Expressions {
@@ -12,20 +13,25 @@ class Namespace {
 private:
   Namespace *parent;
   std::u32string name;
-  std::unordered_map<std::u32string, Namespace *> children;
-  std::unordered_map<std::u32string, ParameterExpression *> globalVariables;
-  std::unordered_map<std::u32string, LambdaExpression *> functions;
+  Utility::OrderPreservingMap<std::u32string, Namespace *> children;
+  Utility::OrderPreservingMap<std::u32string, VariableDeclarationExpression *>
+      globalVariables;
+  Utility::OrderPreservingMap<std::u32string, LambdaExpression *> functions;
 
 public:
-  Namespace(Namespace *parent, std::u32string name) : parent{parent}, name{name} {}
+  Namespace(Namespace *parent, std::u32string name)
+      : parent{parent}, name{name} {}
 
   const Namespace *Parent() { return parent; }
   const std::u32string &Name() const { return name; }
-  std::unordered_map<std::u32string, Namespace *> &Children() { return children; }
-  std::unordered_map<std::u32string, ParameterExpression *> &GlobalVariables() {
+  Utility::OrderPreservingMap<std::u32string, Namespace *> &Children() {
+    return children;
+  }
+  Utility::OrderPreservingMap<std::u32string, VariableDeclarationExpression *> &
+  GlobalVariables() {
     return globalVariables;
   }
-  std::unordered_map<std::u32string, LambdaExpression *> &Functions() {
+  Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &Functions() {
     return functions;
   }
 };
@@ -33,12 +39,24 @@ public:
 class NamespaceFactory {
 private:
   std::vector<Namespace *> namespaces;
+  Namespace *root;
 
 public:
-  NamespaceFactory() = default;
+  NamespaceFactory() : root{nullptr} {}
+  NamespaceFactory(const NamespaceFactory &) = delete;
   ~NamespaceFactory() {
     for (auto ns : namespaces) {
       delete ns;
+    }
+  }
+
+  Namespace *GetRoot() {
+    if (root) {
+      return root;
+    } else {
+      root = Create(nullptr, U"");
+
+      return root;
     }
   }
 
@@ -48,8 +66,9 @@ public:
     return ns;
   }
 
-  void Insert(Namespace* root, const std::vector<std::u32string>& path);
-  Namespace* Search(Namespace* root, const std::vector<std::u32string>& path);
+  void Insert(Namespace *predecessor, const std::vector<std::u32string> &path);
+  Namespace *Search(Namespace *predecessor,
+                    const std::vector<std::u32string> &path);
 };
 
 }; /* namespace Expressions */

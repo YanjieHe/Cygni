@@ -4,6 +4,8 @@
 #include "Visitors/Visitor.hpp"
 #include "Visitors/Scope.hpp"
 #include "Expressions/Type.hpp"
+#include "Expressions/Namespace.hpp"
+#include <stack>
 
 namespace Cygni {
 namespace Visitors {
@@ -13,9 +15,11 @@ class TypeChecker
 private:
   std::unordered_map<const Expression *, const Type *> nodeTypes;
   TypeFactory Types;
+  NamespaceFactory &namespaceFactory;
+  std::stack<Namespace *> namespaceStack;
 
 public:
-  TypeChecker();
+  TypeChecker(NamespaceFactory &namespaceFactory);
 
   const Type *VisitBinary(const BinaryExpression *node,
                           Scope<const Type *> *scope) override;
@@ -37,13 +41,17 @@ public:
                         Scope<const Type *> *parent) override;
   const Type *VisitDefault(const DefaultExpression *node,
                            Scope<const Type *> *scope) override;
-  const Type *VisitVariableDeclaration(const VariableDeclarationExpression *node,
+  const Type *
+  VisitVariableDeclaration(const VariableDeclarationExpression *node,
                            Scope<const Type *> *scope) override;
 
   const Type *GetType(const Expression *node);
 
+  void CheckNamespace(Scope<const Type *> *parent);
+
 private:
   const Type *Register(const Expression *node, const Type *type);
+  bool CheckFunctionType(const Type* declaration, const Type* actual);
 };
 
 }; /* namespace Visitors */

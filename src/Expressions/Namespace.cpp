@@ -3,32 +3,32 @@
 namespace Cygni {
 namespace Expressions {
 
-void NamespaceFactory::Insert(Namespace *root,
+void NamespaceFactory::Insert(Namespace *predecessor,
                               const std::vector<std::u32string> &path) {
 
   for (const std::u32string &name : path) {
-    if (root->Children().count(name)) {
-      root = root->Children().at(name);
+    if (predecessor->Children().ContainsKey(name)) {
+      predecessor = predecessor->Children().GetItemByKey(name);
     } else {
-      Namespace *ns = Create(root, name);
-      root->Children().insert({name, ns});
-      root = ns;
+      Namespace *ns = Create(predecessor, name);
+      predecessor->Children().AddItem(name, ns);
+      predecessor = ns;
     }
   }
 }
 
-Namespace* NamespaceFactory::Search(Namespace *root,
+Namespace* NamespaceFactory::Search(Namespace *predecessor,
                               const std::vector<std::u32string> &path) {
   for (const std::u32string &name : path) {
-    if (root->Children().count(name)) {
-      root = root->Children().at(name);
+    if (predecessor->Children().ContainsKey(name)) {
+      predecessor = predecessor->Children().GetItemByKey(name);
     } else {
 
         return nullptr;
     }
   }
 
-  return root;
+  return predecessor;
 }
 
 }; /* namespace Expressions */

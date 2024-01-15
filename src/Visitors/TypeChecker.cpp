@@ -10,7 +10,11 @@ using std::endl;
 namespace Cygni {
 namespace Visitors {
 
-TypeChecker::TypeChecker() { spdlog::debug("Type checker initialized."); }
+TypeChecker::TypeChecker(NamespaceFactory &namespaceFactory)
+    : namespaceFactory{namespaceFactory} {
+  namespaceStack.push(namespaceFactory.GetRoot());
+  spdlog::debug("Type checker initialized.");
+}
 
 const Type *TypeChecker::VisitBinary(const BinaryExpression *node,
                                      Scope<const Type *> *scope) {
@@ -125,14 +129,44 @@ const Type *TypeChecker::VisitConstant(const ConstantExpression *node,
 
 const Type *TypeChecker::VisitParameter(const ParameterExpression *node,
                                         Scope<const Type *> *scope) {
-  if (scope->Exists(node->Name())) {
-    const Type *type = scope->Get(node->Name());
-    return Register(node, type);
+  if (node->Prefix().empty()) {
+    if (scope->Exists(node->Name())) {
+      const Type *type = scope->Get(node->Name());
+
+      return Register(node, type);
+    } else {
+      throw TreeException(
+          __FILE__, __LINE__,
+          Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."), node,
+          nullptr);
+    }
   } else {
-    throw TreeException(
-        __FILE__, __LINE__,
-        Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."), node,
-        nullptr);
+    Namespace *ns =
+        namespaceFactory.Search(namespaceFactory.GetRoot(), node->Prefix());
+    if (ns) {
+      if (ns->GlobalVariables().ContainsKey(node->Name())) {
+        const Type *type =
+            ns->GlobalVariables().GetItemByKey(node->Name())->GetType();
+
+        return Register(node, type);
+      } else if (ns->Functions().ContainsKey(node->Name())) {
+        CallableType *callableType =
+            ns->Functions().GetItemByKey(node->Name())->GetCallableType(Types);
+
+        return Register(node, static_cast<const Type *>(callableType));
+      } else {
+        throw TreeException(
+            __FILE__, __LINE__,
+            Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."), node,
+            nullptr);
+      }
+    } else {
+      throw TreeException(
+          __FILE__, __LINE__,
+          Utility::UTF32ToUTF8(U"'" + node->Name() +
+                               U"' not defined. The module is missing."),
+          node, nullptr);
+    }
   }
 }
 
@@ -277,9 +311,9 @@ const Type *TypeChecker::VisitDefault(const DefaultExpression *node,
 const Type *
 TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpression *node,
                                       Scope<const Type *> *scope) {
-  const Type* initializer = Visit(node->Initializer(), scope);
+  const Type *initializer = Visit(node->Initializer(), scope);
   scope->Declare(node->Name(), initializer);
-  
+
   return TypeFactory::CreateBasicType(TypeCode::Empty);
 }
 
@@ -287,9 +321,95 @@ const Type *TypeChecker::GetType(const Expression *node) {
   return nodeTypes.at(node);
 }
 
+void TypeChecker::CheckNamespace(Scope<const Type *> *parent) {
+  Namespace *top = namespaceStack.top();
+  Scope<const Type *> *scope(parent);
+
+  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
+    scope->Declare(varDecl->Name(), varDecl->GetType());
+  }
+  for (const auto &funcDecl : top->Functions().GetAllItems()) {
+    CallableType *callableType = funcDecl->GetCallableType(Types);
+    scope->Declare(funcDecl->Name(), callableType);
+  }
+
+  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
+    VisitVariableDeclaration(varDecl, scope);
+  }
+  for (const auto &funcDecl : top->Functions().GetAllItems()) {
+    const Type *actualType = VisitLambda(funcDecl, scope);
+    const Type *declarationType = scope->Get(funcDecl->Name());
+    if (!CheckFunctionType(declarationType, actualType)) {
+      throw TreeException(__FILE__, __LINE__, "The function's implementation "
+                                              "type does not match the "
+                                              "declared function type.",
+                          funcDecl, nullptr);
+    }
+  }
+
+  for (const auto &current : top->Children().GetAllItems()) {
+    namespaceStack.push(current);
+    CheckNamespace(scope);
+    namespaceStack.pop();
+  }
+}
+
 const Type *TypeChecker::Register(const Expression *node, const Type *type) {
   nodeTypes[node] = type;
   return type;
+}
+
+bool TypeChecker::CheckFunctionType(const Type *declaration,
+                                    const Type *actual) {
+  if (declaration->GetTypeCode() == TypeCode::Callable &&
+      actual->GetTypeCode() == TypeCode::Callable) {
+    const CallableType *declarationCallableType =
+        static_cast<const CallableType *>(declaration);
+    const CallableType *actualCallableType =
+        static_cast<const CallableType *>(actual);
+    if (declarationCallableType->Arguments().size() ==
+        actualCallableType->Arguments().size()) {
+
+      for (size_t i = 0; i < declarationCallableType->Arguments().size(); i++) {
+        if (!TypeFactory::AreTypesEqual(
+                declarationCallableType->Arguments().at(i),
+                actualCallableType->Arguments().at(i))) {
+
+          return false;
+        }
+      }
+
+      if (TypeFactory::AreTypesEqual(declarationCallableType->GetReturnType(),
+                                     actualCallableType->GetReturnType())) {
+
+        return true;
+      } else {
+        if (declarationCallableType->GetReturnType()->GetTypeCode() ==
+            TypeCode::Empty) {
+          spdlog::info("The declared function's return type is 'Void,' "
+                        "allowing any return type from the function body.");
+
+          return true;
+        } else {
+
+          return false;
+        }
+      }
+    } else {
+
+      return false;
+    }
+  } else {
+    if (declaration->GetTypeCode() != TypeCode::Callable) {
+      spdlog::error("The declared function type is not callable.");
+    }
+
+    if (actual->GetTypeCode() != TypeCode::Callable) {
+      spdlog::error("The implementation type of the function is not callable.");
+    }
+
+    return false;
+  }
 }
 
 }; /* namespace Visitors */

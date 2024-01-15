@@ -5,11 +5,14 @@
 #include "Expressions/Expression.hpp"
 #include "Expressions/SourceRange.hpp"
 #include "LexicalAnalysis/Token.hpp"
+#include "Expressions/Namespace.hpp"
+#include <stack>
 
 namespace Cygni {
 namespace SyntaxAnalysis {
 
 using LexicalAnalysis::Token;
+using namespace Cygni::Expressions;
 
 using ExpPtr = Expressions::Expression *;
 using TypePtr = Expressions::Type *;
@@ -21,6 +24,8 @@ private:
   int offset;
   Expressions::ExpressionFactory expressionFactory;
   Expressions::TypeFactory typeFactory;
+  Expressions::NamespaceFactory namespaceFactory;
+  std::stack<Expressions::Namespace*> namespaceStack;
 
 public:
   Parser(std::vector<Token> tokens,
@@ -42,6 +47,8 @@ public:
     return Expressions::SourceRange{document, token.line, Look().line,
                                     token.column, Look().column};
   }
+
+  Expressions::NamespaceFactory& GetNamespaceFactory() { return namespaceFactory; }
 
   ExpPtr Statement();
 
@@ -71,9 +78,9 @@ public:
 
   ExpPtr WhileStatement();
 
-  ExpPtr VariableDeclarationStatement();
+  Expressions::VariableDeclarationExpression* VariableDeclarationStatement();
 
-  ExpPtr FunctionDeclarationStatement();
+  Expressions::LambdaExpression* FunctionDeclarationStatement(const std::vector<Annotation>& annotations);
 
   std::vector<ExpPtr> ParseArguments();
 
@@ -82,6 +89,14 @@ public:
   Expressions::ParameterExpression* ParseParameter();
 
   TypePtr ParseType();
+
+  void ParseNamespace();
+
+  AnnotationArgument ParseAnnotationArgument();
+
+  Annotation ParseAnnotation();
+
+  std::vector<Annotation> ParseAnnotations();
 };
 
 }; /* namespace SyntaxAnalysis */

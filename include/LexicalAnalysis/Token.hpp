@@ -74,6 +74,7 @@ enum class TokenTag {
   Package,
   Interface,
   To,
+  ScopeResolutionOperator,
   Eof
 };
 

@@ -2,7 +2,7 @@
 #define CYGNI_VISITORS_SCOPE_HPP
 
 #include <unordered_map>
-#include "Visitors/ScopException.hpp"
+#include "Visitors/ScopeException.hpp"
 
 namespace Cygni {
 namespace Visitors {

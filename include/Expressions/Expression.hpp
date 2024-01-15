@@ -105,6 +105,7 @@ public:
 
 class ParameterExpression : public Expression {
 private:
+  std::vector<std::u32string> prefix;
   std::u32string name;
   Type *type;
 
@@ -112,8 +113,14 @@ public:
   ParameterExpression(SourceRange sourceRange, const std::u32string &name,
                       Type *type)
       : Expression(sourceRange), name(name), type{type} {}
+  ParameterExpression(SourceRange sourceRange,
+                      std::vector<std::u32string> prefix,
+                      const std::u32string &name, Type *type)
+      : Expression(sourceRange), name(name), type{type} {}
 
   ExpressionType NodeType() const override { return ExpressionType::Parameter; }
+
+  const std::vector<std::u32string> &Prefix() const { return prefix; }
 
   const std::u32string &Name() const { return name; }
 
@@ -123,13 +130,15 @@ public:
 class VariableDeclarationExpression : public Expression {
 private:
   std::u32string name;
+  Type *type;
   Expression *initializer;
 
 public:
   VariableDeclarationExpression(SourceRange sourceRange,
-                                const std::u32string &name,
+                                const std::u32string &name, Type *type,
                                 Expression *initializer)
-      : Expression(sourceRange), name(name), initializer(initializer) {}
+      : Expression(sourceRange), name{name}, type{type},
+        initializer{initializer} {}
 
   ExpressionType NodeType() const override {
     return ExpressionType::VariableDeclaration;
@@ -138,6 +147,8 @@ public:
   const std::u32string &Name() const { return name; }
 
   const Expression *Initializer() const { return initializer; }
+
+  const Type *GetType() const { return type; }
 };
 
 class BlockExpression : public Expression {
@@ -194,24 +205,52 @@ public:
   const std::vector<Expression *> &Arguments() const { return arguments; }
 };
 
+class AnnotationArgument {
+private:
+  std::u32string name;
+  std::any value;
+
+public:
+  AnnotationArgument() = default;
+  AnnotationArgument(std::u32string name, std::any value)
+      : name{name}, value{value} {}
+
+  const std::u32string &Name() const { return name; }
+  const std::any &Value() const { return value; }
+};
+
+class Annotation {
+private:
+  std::u32string name;
+  std::vector<AnnotationArgument> arguments;
+
+public:
+  Annotation() : name{}, arguments{} {}
+  Annotation(std::u32string name, std::vector<AnnotationArgument> arguments)
+      : name{name}, arguments{arguments} {}
+  const std::u32string &Name() const { return name; }
+  const std::vector<AnnotationArgument> Arguments() const { return arguments; }
+};
+
 class LambdaExpression : public Expression {
 private:
   std::u32string name;
   Expression *body;
   std::vector<ParameterExpression *> parameters;
   Type *returnType;
+  std::vector<Annotation> annotations;
 
 public:
   LambdaExpression(SourceRange sourceRange, std::u32string name,
                    Expression *body,
                    const std::vector<ParameterExpression *> &parameters,
-                   Type *returnType)
+                   Type *returnType, std::vector<Annotation> annotations)
       : Expression(sourceRange), name{name}, body{body}, parameters{parameters},
-        returnType{returnType} {}
+        returnType{returnType}, annotations{annotations} {}
 
   ExpressionType NodeType() const override { return ExpressionType::Lambda; }
 
-  const std::u32string& Name() const { return name; }
+  const std::u32string &Name() const { return name; }
 
   const Expression *Body() const { return body; }
 
@@ -220,6 +259,30 @@ public:
   }
 
   const Type *ReturnType() const { return returnType; }
+
+  CallableType *GetCallableType(TypeFactory &typeFactory) const {
+    std::vector<const Type *> parameterTypes;
+    for (const auto &parameter : Parameters()) {
+      parameterTypes.push_back(parameter->GetType());
+    }
+    CallableType *callableType =
+        typeFactory.CreateCallableType(parameterTypes, ReturnType());
+
+    return callableType;
+  }
+
+  const std::vector<Annotation> &Annotations() const { return annotations; }
+
+  bool IsNativeFunction() const {
+    for (auto annotation : Annotations()) {
+      if (annotation.Name() == U"External") {
+
+        return true;
+      }
+    }
+
+    return false;
+  }
 };
 
 class LoopExpression : public Expression {
@@ -262,6 +325,7 @@ private:
 
 public:
   ExpressionFactory() = default;
+  ExpressionFactory(const ExpressionFactory &) = delete;
   ~ExpressionFactory() {
     for (auto node : nodes) {
       delete node;

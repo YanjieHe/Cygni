@@ -3,6 +3,10 @@
 namespace Cygni {
 namespace Visitors {
 
+NameLocator::NameLocator(NamespaceFactory &namespaceFactory)
+    : namespaceFactory{namespaceFactory} {
+  namespaceStack.push(namespaceFactory.GetRoot());
+}
 void NameLocator::VisitBinary(const BinaryExpression *node,
                               Scope<NameInfo> *scope) {
   Visit(node->Left(), scope);
@@ -16,14 +20,37 @@ void NameLocator::VisitConstant(const ConstantExpression *node,
                                 Scope<NameInfo> *scope) {
   /* TODO: support duplicated constants. */
   NameInfo nameInfo(LocationKind::FunctionConstant,
-                    scope->Get(U"$LOCATION_CONSTANT_COUNT").number);
+                    scope->Get(LOCAL_CONSTANT_COUNT).Number());
   nameInfoTable.insert({static_cast<const Expression *>(node), nameInfo});
-  scope->Get(U"$LOCATION_CONSTANT_COUNT").number++;
+  scope->Get(LOCAL_CONSTANT_COUNT).Number()++;
 }
 void NameLocator::VisitParameter(const ParameterExpression *node,
                                  Scope<NameInfo> *scope) {
-  NameInfo nameInfo = scope->Get(node->Name());
-  nameInfoTable.insert({static_cast<const Expression *>(node), nameInfo});
+  if (node->Prefix().empty()) {
+    NameInfo nameInfo = scope->Get(node->Name());
+    nameInfoTable.insert({static_cast<const Expression *>(node), nameInfo});
+  } else {
+    Namespace *ns =
+        namespaceFactory.Search(namespaceFactory.GetRoot(), node->Prefix());
+    if (ns) {
+      if (ns->GlobalVariables().ContainsKey(node->Name())) {
+        const NameInfo &nameInfo =
+            nameInfoTable.at(ns->GlobalVariables().GetItemByKey(node->Name()));
+
+        return Register(node, nameInfo);
+      } else if (ns->Functions().ContainsKey(node->Name())) {
+        const NameInfo &nameInfo =
+            nameInfoTable.at(ns->Functions().GetItemByKey(node->Name()));
+
+        return Register(node, nameInfo);
+      } else {
+        throw TreeException(
+            __FILE__, __LINE__,
+            Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."), node,
+            nullptr);
+      }
+    }
+  }
 }
 void NameLocator::VisitBlock(const BlockExpression *node,
                              Scope<NameInfo> *parent) {
@@ -48,15 +75,15 @@ void NameLocator::VisitCall(const CallExpression *node,
 void NameLocator::VisitLambda(const LambdaExpression *node,
                               Scope<NameInfo> *parent) {
   Scope<NameInfo> scope(parent);
-  scope.Declare(U"$LOCAL_VARIABLE_COUNT",
+  scope.Declare(LOCAL_VARIABLE_COUNT,
                 NameInfo(LocationKind::FunctionVariableCount, 0));
-  scope.Declare(U"$LOCAL_CONSTANT_COUNT",
+  scope.Declare(LOCAL_CONSTANT_COUNT,
                 NameInfo(LocationKind::FunctionConstantCount, 0));
   for (const auto &parameter : node->Parameters()) {
     scope.Declare(parameter->Name(),
                   NameInfo(LocationKind::FunctionVariable,
-                           scope.Get(U"$LOCAL_VARIABLE_COUNT").number));
-    scope.Get(U"$LOCAL_VARIABLE_COUNT").number++;
+                           scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+    scope.Get(LOCAL_VARIABLE_COUNT).Number()++;
   }
   Visit(node->Body(), &scope);
 }
@@ -73,9 +100,57 @@ void NameLocator::VisitVariableDeclaration(
     const VariableDeclarationExpression *node, Scope<NameInfo> *scope) {
   scope->Declare(node->Name(),
                  NameInfo(LocationKind::FunctionVariable,
-                          scope->Get(U"$LOCAL_VARIABLE_COUNT").number));
-  scope->Get(U"$LOCAL_VARIABLE_COUNT").number++;
+                          scope->Get(LOCAL_VARIABLE_COUNT).Number()));
+  scope->Get(LOCAL_VARIABLE_COUNT).Number()++;
   Visit(node->Initializer(), scope);
 }
+void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
+  Namespace *top = namespaceStack.top();
+  Scope<NameInfo> *scope(parent);
+
+  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
+    NameInfo nameInfo(LocationKind::GlobalVariable,
+                      scope->Get(GLOBAL_VARIABLE_COUNT).Number());
+    scope->Declare(varDecl->Name(), nameInfo);
+    nameInfoTable.insert({static_cast<const Expression *>(varDecl), nameInfo});
+    scope->Get(GLOBAL_VARIABLE_COUNT).Number()++;
+  }
+  for (const auto &funcDecl : top->Functions().GetAllItems()) {
+    if (funcDecl->IsNativeFunction()) {
+      NameInfo nameInfo(LocationKind::NativeFunction,
+                        scope->Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
+      scope->Declare(funcDecl->Name(), nameInfo);
+      nameInfoTable.insert(
+          {static_cast<const Expression *>(funcDecl), nameInfo});
+      scope->Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number()++;
+
+    } else {
+      NameInfo nameInfo(LocationKind::Function,
+                        scope->Get(GLOBAL_FUNCTION_COUNT).Number());
+      scope->Declare(funcDecl->Name(), nameInfo);
+      nameInfoTable.insert(
+          {static_cast<const Expression *>(funcDecl), nameInfo});
+      scope->Get(GLOBAL_FUNCTION_COUNT).Number()++;
+    }
+  }
+
+  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
+    VisitVariableDeclaration(varDecl, scope);
+  }
+  for (const auto &funcDecl : top->Functions().GetAllItems()) {
+    VisitLambda(funcDecl, scope);
+  }
+
+  for (const auto &current : top->Children().GetAllItems()) {
+    namespaceStack.push(current);
+    CheckNamespace(scope);
+    namespaceStack.pop();
+  }
+}
+
+void NameLocator::Register(const Expression *node, const NameInfo &nameInfo) {
+  nameInfoTable.insert({node, nameInfo});
+}
+
 }; /* namespace Visitors */
 }; /* namespace Cygni */
