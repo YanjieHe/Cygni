@@ -69,6 +69,7 @@ enum class ConstantKind {
 
 class Constant : public ICompilable {
 public:
+  Constant() = default;
   Constant(ConstantKind constantKind, std::any value)
       : constantKind{constantKind}, value{value} {}
 
@@ -84,6 +85,7 @@ private:
 
 class GlobalVariable : public ICompilable {
 public:
+  GlobalVariable() = default;
   GlobalVariable(std::string name, int initializerOffset)
       : name{name}, initializerOffset{initializerOffset} {}
 
@@ -96,6 +98,7 @@ private:
 
 class StructureMeta : public ICompilable {
 public:
+  StructureMeta() = default;
   StructureMeta(std::string name, std::vector<std::string> fieldNames)
       : name{name}, fieldNames{fieldNames} {}
 
@@ -108,6 +111,7 @@ private:
 
 class Function : public ICompilable {
 public:
+  Function() = default;
   Function(std::string name, Byte stack, Byte locals, Byte argsSize,
            std::vector<Constant> constantPool, ByteCode code)
       : name{name}, stack{stack}, locals{locals}, argsSize{argsSize},
@@ -126,6 +130,7 @@ private:
 
 class NativeLibrary : public ICompilable {
 public:
+  NativeLibrary() = default;
   NativeLibrary(std::string libraryPath) { this->libraryPath = libraryPath; }
   void Compile(ByteCode &byteCode) override;
 
@@ -135,6 +140,7 @@ private:
 
 class NativeFunction : public ICompilable {
 public:
+  NativeFunction() = default;
   NativeFunction(std::string functionName, uint16_t argsSize,
                  int32_t nativeLibraryOffset)
       : functionName{functionName}, argsSize{argsSize},
@@ -149,6 +155,7 @@ private:
 
 class ByteCodeProgram : public ICompilable {
 public:
+  ByteCodeProgram() = default;
   ByteCodeProgram(std::vector<GlobalVariable> globalVariables,
                   std::vector<StructureMeta> structures,
                   std::vector<Function> functions,
