@@ -6,6 +6,7 @@
 #include "Visitors/NameLocator.hpp"
 #include "Visitors/Compiler.hpp"
 #include "Utility/UTF32Functions.hpp"
+#include "CLI/CLI11.hpp"
 
 using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
@@ -45,8 +46,9 @@ void Compile(std::string sourceFilePath, std::string targetFile) {
                           NameInfo(LocationKind::Global_Variable_Count, 0));
     nameInfoScope.Declare(GLOBAL_FUNCTION_COUNT,
                           NameInfo(LocationKind::Global_Function_Count, 0));
-    nameInfoScope.Declare(GLOBAL_NATIVE_FUNCTION_COUNT,
-                          NameInfo(LocationKind::Global_Native_Function_Count, 0));
+    nameInfoScope.Declare(
+        GLOBAL_NATIVE_FUNCTION_COUNT,
+        NameInfo(LocationKind::Global_Native_Function_Count, 0));
     nameLocator.CheckNamespace(&nameInfoScope);
 
     Compiler compiler(typeChecker, nameLocator, parser.GetNamespaceFactory());
@@ -55,9 +57,11 @@ void Compile(std::string sourceFilePath, std::string targetFile) {
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     compiler.CompileNamespace(functions, nativeFunctions);
-    std::vector<flint_bytecode::NativeLibrary> nativeLibraries = compiler.GetNativeLibraries();
-    flint_bytecode::ByteCodeProgram program(
-        {}, {}, functions, nativeLibraries, nativeFunctions, compiler.EntryPoint());
+    std::vector<flint_bytecode::NativeLibrary> nativeLibraries =
+        compiler.GetNativeLibraries();
+    flint_bytecode::ByteCodeProgram program({}, {}, functions, nativeLibraries,
+                                            nativeFunctions,
+                                            compiler.EntryPoint());
 
     ByteCode byteCode;
     program.Compile(byteCode);
@@ -66,8 +70,21 @@ void Compile(std::string sourceFilePath, std::string targetFile) {
 }
 
 int main(int argc, char **argv) {
-  std::cout << "Hello, world!" << std::endl;
-  Compile("code/print-1-to-10.cyg", "output/print-1-to-10.bin");
+  CLI::App app{"Cygni Compiler"};
 
+  argv = app.ensure_utf8(argv);
+
+  std::string input_file_path;
+  std::string output_file_path;
+  app.add_option("-i,--input", input_file_path,
+                 "Path to the input Cygni source file.")
+      ->required();
+  app.add_option("-o,--output", output_file_path,
+                 "Path to the output executable file.")
+      ->required();
+
+  CLI11_PARSE(app, argc, argv);
+
+  Compile(input_file_path, output_file_path);
   return 0;
 }
