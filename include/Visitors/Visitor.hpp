@@ -51,8 +51,8 @@ public:
     case ExpressionType::Lambda:
       return VisitLambda(static_cast<const LambdaExpression *>(node),
                          arguments...);
-    case ExpressionType::Loop:
-      return VisitLoop(static_cast<const LoopExpression *>(node), arguments...);
+    case ExpressionType::WhileLoop:
+      return VisitWhileLoop(static_cast<const WhileLoopExpression *>(node), arguments...);
     case ExpressionType::Default:
       return VisitDefault(static_cast<const DefaultExpression *>(node),
                           arguments...);
@@ -82,7 +82,7 @@ public:
                                ArgTypes... arguments) = 0;
   virtual ReturnType VisitLambda(const LambdaExpression *node,
                                  ArgTypes... arguments) = 0;
-  virtual ReturnType VisitLoop(const LoopExpression *node,
+  virtual ReturnType VisitWhileLoop(const WhileLoopExpression *node,
                                ArgTypes... arguments) = 0;
   virtual ReturnType VisitDefault(const DefaultExpression *node,
                                   ArgTypes... arguments) = 0;

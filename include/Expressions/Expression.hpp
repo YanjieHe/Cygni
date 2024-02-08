@@ -18,26 +18,26 @@ enum class ExpressionType {
   Conditional = 5,
   Constant = 6,
   Convert = 7,
-  Divide = 8,
-  Equal = 9,
-  GreaterThan = 10,
-  GreaterThanOrEqual = 11,
-  Lambda = 12,
-  LessThan = 13,
-  LessThanOrEqual = 14,
-  Modulo = 15,
-  Multiply = 16,
-  Not = 17,
-  NotEqual = 18,
-  Or = 19,
-  Parameter = 20,
-  Subtract = 21,
-  Halt = 22,
-  Loop = 23,
-  Default = 24,
+  Default = 8,
+  Divide = 9,
+  Equal = 10,
+  GreaterThan = 11,
+  GreaterThanOrEqual = 12,
+  Halt = 13,
+  Lambda = 14,
+  LessThan = 15,
+  LessThanOrEqual = 16,
+  Modulo = 17,
+  Multiply = 18,
+  Not = 19,
+  NotEqual = 20,
+  Or = 21,
+  Parameter = 22,
+  Subtract = 23,
+  UnaryMinus = 24,
   UnaryPlus = 25,
-  UnaryMinus = 26,
-  VariableDeclaration,
+  VariableDeclaration = 26,
+  WhileLoop = 27
 };
 
 class Expression {
@@ -285,21 +285,17 @@ public:
   }
 };
 
-class LoopExpression : public Expression {
+class WhileLoopExpression : public Expression {
 private:
-  Expression *initializer;
   Expression *condition;
   Expression *body;
 
 public:
-  LoopExpression(SourceRange sourceRange, Expression *initializer,
-                 Expression *condition, Expression *body)
-      : Expression(sourceRange), initializer{initializer}, condition{condition},
-        body{body} {}
+  WhileLoopExpression(SourceRange sourceRange, Expression *condition,
+                      Expression *body)
+      : Expression(sourceRange), condition{condition}, body{body} {}
 
-  ExpressionType NodeType() const override { return ExpressionType::Loop; }
-
-  const Expression *Initializer() const { return initializer; }
+  ExpressionType NodeType() const override { return ExpressionType::WhileLoop; }
 
   const Expression *Condition() const { return condition; }
 

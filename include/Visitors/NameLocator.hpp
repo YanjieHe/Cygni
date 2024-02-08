@@ -73,7 +73,7 @@ public:
   void VisitCall(const CallExpression *node, Scope<NameInfo> *scope) override;
   void VisitLambda(const LambdaExpression *node,
                    Scope<NameInfo> *parent) override;
-  void VisitLoop(const LoopExpression *node, Scope<NameInfo> *parent) override;
+  void VisitWhileLoop(const WhileLoopExpression *node, Scope<NameInfo> *parent) override;
   void VisitDefault(const DefaultExpression *node,
                     Scope<NameInfo> *scope) override;
   void VisitVariableDeclaration(const VariableDeclarationExpression *node,

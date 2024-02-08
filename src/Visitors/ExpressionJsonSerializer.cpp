@@ -122,13 +122,12 @@ Json ExpressionJsonSerializer::VisitLambda(const LambdaExpression *node) {
   return json;
 }
 
-Json ExpressionJsonSerializer::VisitLoop(const LoopExpression *node) {
+Json ExpressionJsonSerializer::VisitWhileLoop(const WhileLoopExpression *node) {
   Json json;
 
   json["NodeType"] = magic_enum::enum_name<ExpressionType>(node->NodeType());
   json["SourceRange"] = SourceRangeToJson(node->GetSourceRange());
 
-  json["Initializer"] = Visit(node->Initializer());
   json["Condition"] = Visit(node->Condition());
   json["Body"] = Visit(node->Body());
 

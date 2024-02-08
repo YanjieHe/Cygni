@@ -128,7 +128,7 @@ TEST_CASE("test conditional", "[Conditional]") {
   REQUIRE(type->GetTypeCode() == TypeCode::Union);
 }
 
-TEST_CASE("test loop", "[Loop]") {
+TEST_CASE("test loop", "[WhileLoop]") {
   std::shared_ptr<SourceCodeFile> sourceCodeFile =
       std::make_shared<SourceCodeFile>("source-code-file");
 

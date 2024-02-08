@@ -93,10 +93,9 @@ void NameLocator::VisitLambda(const LambdaExpression *node,
   Register(node, NameInfo(LocationKind::FunctionConstantCount,
                           scope.Get(LOCAL_CONSTANT_COUNT).Number()));
 }
-void NameLocator::VisitLoop(const LoopExpression *node,
+void NameLocator::VisitWhileLoop(const WhileLoopExpression *node,
                             Scope<NameInfo> *parent) {
   Scope<NameInfo> scope(parent);
-  Visit(node->Initializer(), &scope);
   Visit(node->Condition(), &scope);
   Visit(node->Body(), &scope);
 }

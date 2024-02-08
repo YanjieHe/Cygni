@@ -227,13 +227,11 @@ TEST_CASE("test while statement", "[ControlFlow]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.Statement();
 
-  REQUIRE(exp->NodeType() == ExpressionType::Loop);
-  auto loopExp = static_cast<LoopExpression *>(exp);
-  REQUIRE(loopExp->Initializer() != nullptr);
+  REQUIRE(exp->NodeType() == ExpressionType::WhileLoop);
+  auto loopExp = static_cast<WhileLoopExpression *>(exp);
   REQUIRE(loopExp->Condition() != nullptr);
   REQUIRE(loopExp->Body() != nullptr);
 
-  REQUIRE(loopExp->Initializer()->NodeType() == ExpressionType::Default);
   REQUIRE(loopExp->Condition()->NodeType() == ExpressionType::Constant);
   REQUIRE(loopExp->Body()->NodeType() == ExpressionType::Block);
 }

@@ -20,7 +20,7 @@ public:
   Json VisitUnary(const UnaryExpression *node) override;
   Json VisitCall(const CallExpression *node) override;
   Json VisitLambda(const LambdaExpression *node) override;
-  Json VisitLoop(const LoopExpression *node) override;
+  Json VisitWhileLoop(const WhileLoopExpression *node) override;
   Json VisitDefault(const DefaultExpression *node) override;
   Json VisitVariableDeclaration(const VariableDeclarationExpression *node) override;
 

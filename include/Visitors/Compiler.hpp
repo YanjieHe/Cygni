@@ -58,7 +58,7 @@ public:
   void
   VisitLambda(const LambdaExpression *node, ByteCode &byteCode,
               std::vector<flint_bytecode::Constant> &constantPool) override;
-  void VisitLoop(const LoopExpression *node, ByteCode &byteCode,
+  void VisitWhileLoop(const WhileLoopExpression *node, ByteCode &byteCode,
                  std::vector<flint_bytecode::Constant> &constantPool) override;
   void
   VisitDefault(const DefaultExpression *node, ByteCode &byteCode,
@@ -67,6 +67,8 @@ public:
   void VisitVariableDeclaration(
       const VariableDeclarationExpression *node, ByteCode &byteCode,
       std::vector<flint_bytecode::Constant> &constantPool) override;
+  
+  void CompileAssignment(const BinaryExpression* node, ByteCode& byteCode, std::vector<flint_bytecode::Constant>& constantPool);
 
   flint_bytecode::Function CompileFunction(const std::string &name,
                                            const LambdaExpression *node);

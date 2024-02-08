@@ -26,189 +26,190 @@ void Compiler::VisitBinary(
   Visit(node->Left(), byteCode, constantPool);
   Visit(node->Right(), byteCode, constantPool);
   if (node->NodeType() == ExpressionType::Assign) {
-    throw std::runtime_error("assignment not supported");
-  }
-  TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
-  if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode()) {
-    throw std::runtime_error("binary type mismatch");
-  }
-  switch (typeCode) {
-  case TypeCode::Int32: {
-    switch (node->NodeType()) {
-    case ExpressionType::Add:
-      byteCode.AddOp(OpCode::ADD_I32);
-      break;
-    case ExpressionType::Subtract:
-      byteCode.AddOp(OpCode::SUB_I32);
-      break;
-    case ExpressionType::Multiply:
-      byteCode.AddOp(OpCode::MUL_I32);
-      break;
-    case ExpressionType::Divide:
-      byteCode.AddOp(OpCode::DIV_I32);
-      break;
-    case ExpressionType::Modulo:
-      byteCode.AddOp(OpCode::MOD_I32);
-      break;
-    case ExpressionType::GreaterThan:
-      byteCode.AddOp(OpCode::GT_I32);
-      break;
-    case ExpressionType::GreaterThanOrEqual:
-      byteCode.AddOp(OpCode::GE_I32);
-      break;
-    case ExpressionType::LessThan:
-      byteCode.AddOp(OpCode::LT_I32);
-      break;
-    case ExpressionType::LessThanOrEqual:
-      byteCode.AddOp(OpCode::LE_I32);
-      break;
-    case ExpressionType::Equal:
-      byteCode.AddOp(OpCode::EQ_I32);
-      break;
-    case ExpressionType::NotEqual:
-      byteCode.AddOp(OpCode::NE_I32);
-      break;
-    default:
-      throw std::runtime_error(
-          "Unsupported binary operator for integer 32 type.");
+    CompileAssignment(node, byteCode, constantPool);
+  } else {
+    TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
+    if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode()) {
+      throw std::runtime_error("binary type mismatch");
     }
-    break;
-  }
-  case TypeCode::Int64: {
-    switch (node->NodeType()) {
-    case ExpressionType::Add:
-      byteCode.AddOp(OpCode::ADD_I64);
+    switch (typeCode) {
+    case TypeCode::Int32: {
+      switch (node->NodeType()) {
+      case ExpressionType::Add:
+        byteCode.AddOp(OpCode::ADD_I32);
+        break;
+      case ExpressionType::Subtract:
+        byteCode.AddOp(OpCode::SUB_I32);
+        break;
+      case ExpressionType::Multiply:
+        byteCode.AddOp(OpCode::MUL_I32);
+        break;
+      case ExpressionType::Divide:
+        byteCode.AddOp(OpCode::DIV_I32);
+        break;
+      case ExpressionType::Modulo:
+        byteCode.AddOp(OpCode::MOD_I32);
+        break;
+      case ExpressionType::GreaterThan:
+        byteCode.AddOp(OpCode::GT_I32);
+        break;
+      case ExpressionType::GreaterThanOrEqual:
+        byteCode.AddOp(OpCode::GE_I32);
+        break;
+      case ExpressionType::LessThan:
+        byteCode.AddOp(OpCode::LT_I32);
+        break;
+      case ExpressionType::LessThanOrEqual:
+        byteCode.AddOp(OpCode::LE_I32);
+        break;
+      case ExpressionType::Equal:
+        byteCode.AddOp(OpCode::EQ_I32);
+        break;
+      case ExpressionType::NotEqual:
+        byteCode.AddOp(OpCode::NE_I32);
+        break;
+      default:
+        throw std::runtime_error(
+            "Unsupported binary operator for integer 32 type.");
+      }
       break;
-    case ExpressionType::Subtract:
-      byteCode.AddOp(OpCode::SUB_I64);
-      break;
-    case ExpressionType::Multiply:
-      byteCode.AddOp(OpCode::MUL_I64);
-      break;
-    case ExpressionType::Divide:
-      byteCode.AddOp(OpCode::DIV_I64);
-      break;
-    case ExpressionType::Modulo:
-      byteCode.AddOp(OpCode::MOD_I64);
-      break;
-    case ExpressionType::GreaterThan:
-      byteCode.AddOp(OpCode::GT_I64);
-      break;
-    case ExpressionType::GreaterThanOrEqual:
-      byteCode.AddOp(OpCode::GE_I64);
-      break;
-    case ExpressionType::LessThan:
-      byteCode.AddOp(OpCode::LT_I64);
-      break;
-    case ExpressionType::LessThanOrEqual:
-      byteCode.AddOp(OpCode::LE_I64);
-      break;
-    case ExpressionType::Equal:
-      byteCode.AddOp(OpCode::EQ_I64);
-      break;
-    case ExpressionType::NotEqual:
-      byteCode.AddOp(OpCode::NE_I64);
-      break;
-    default:
-      throw std::runtime_error(
-          "Unsupported binary operator for integer 64 type.");
     }
-    break;
-  }
-  case TypeCode::Float32: {
-    switch (node->NodeType()) {
-    case ExpressionType::Add:
-      byteCode.AddOp(OpCode::ADD_F32);
+    case TypeCode::Int64: {
+      switch (node->NodeType()) {
+      case ExpressionType::Add:
+        byteCode.AddOp(OpCode::ADD_I64);
+        break;
+      case ExpressionType::Subtract:
+        byteCode.AddOp(OpCode::SUB_I64);
+        break;
+      case ExpressionType::Multiply:
+        byteCode.AddOp(OpCode::MUL_I64);
+        break;
+      case ExpressionType::Divide:
+        byteCode.AddOp(OpCode::DIV_I64);
+        break;
+      case ExpressionType::Modulo:
+        byteCode.AddOp(OpCode::MOD_I64);
+        break;
+      case ExpressionType::GreaterThan:
+        byteCode.AddOp(OpCode::GT_I64);
+        break;
+      case ExpressionType::GreaterThanOrEqual:
+        byteCode.AddOp(OpCode::GE_I64);
+        break;
+      case ExpressionType::LessThan:
+        byteCode.AddOp(OpCode::LT_I64);
+        break;
+      case ExpressionType::LessThanOrEqual:
+        byteCode.AddOp(OpCode::LE_I64);
+        break;
+      case ExpressionType::Equal:
+        byteCode.AddOp(OpCode::EQ_I64);
+        break;
+      case ExpressionType::NotEqual:
+        byteCode.AddOp(OpCode::NE_I64);
+        break;
+      default:
+        throw std::runtime_error(
+            "Unsupported binary operator for integer 64 type.");
+      }
       break;
-    case ExpressionType::Subtract:
-      byteCode.AddOp(OpCode::SUB_F32);
-      break;
-    case ExpressionType::Multiply:
-      byteCode.AddOp(OpCode::MUL_F32);
-      break;
-    case ExpressionType::Divide:
-      byteCode.AddOp(OpCode::DIV_F32);
-      break;
-    case ExpressionType::Modulo:
-      byteCode.AddOp(OpCode::MOD_F32);
-      break;
-    case ExpressionType::GreaterThan:
-      byteCode.AddOp(OpCode::GT_F32);
-      break;
-    case ExpressionType::GreaterThanOrEqual:
-      byteCode.AddOp(OpCode::GE_F32);
-      break;
-    case ExpressionType::LessThan:
-      byteCode.AddOp(OpCode::LT_F32);
-      break;
-    case ExpressionType::LessThanOrEqual:
-      byteCode.AddOp(OpCode::LE_F32);
-      break;
-    case ExpressionType::Equal:
-      byteCode.AddOp(OpCode::EQ_F32);
-      break;
-    case ExpressionType::NotEqual:
-      byteCode.AddOp(OpCode::NE_F32);
-      break;
-    default:
-      throw std::runtime_error(
-          "Unsupported binary operator for float 32 type.");
     }
-    break;
-  }
-  case TypeCode::Float64: {
-    switch (node->NodeType()) {
-    case ExpressionType::Add:
-      byteCode.AddOp(OpCode::ADD_F64);
+    case TypeCode::Float32: {
+      switch (node->NodeType()) {
+      case ExpressionType::Add:
+        byteCode.AddOp(OpCode::ADD_F32);
+        break;
+      case ExpressionType::Subtract:
+        byteCode.AddOp(OpCode::SUB_F32);
+        break;
+      case ExpressionType::Multiply:
+        byteCode.AddOp(OpCode::MUL_F32);
+        break;
+      case ExpressionType::Divide:
+        byteCode.AddOp(OpCode::DIV_F32);
+        break;
+      case ExpressionType::Modulo:
+        byteCode.AddOp(OpCode::MOD_F32);
+        break;
+      case ExpressionType::GreaterThan:
+        byteCode.AddOp(OpCode::GT_F32);
+        break;
+      case ExpressionType::GreaterThanOrEqual:
+        byteCode.AddOp(OpCode::GE_F32);
+        break;
+      case ExpressionType::LessThan:
+        byteCode.AddOp(OpCode::LT_F32);
+        break;
+      case ExpressionType::LessThanOrEqual:
+        byteCode.AddOp(OpCode::LE_F32);
+        break;
+      case ExpressionType::Equal:
+        byteCode.AddOp(OpCode::EQ_F32);
+        break;
+      case ExpressionType::NotEqual:
+        byteCode.AddOp(OpCode::NE_F32);
+        break;
+      default:
+        throw std::runtime_error(
+            "Unsupported binary operator for float 32 type.");
+      }
       break;
-    case ExpressionType::Subtract:
-      byteCode.AddOp(OpCode::SUB_F64);
-      break;
-    case ExpressionType::Multiply:
-      byteCode.AddOp(OpCode::MUL_F64);
-      break;
-    case ExpressionType::Divide:
-      byteCode.AddOp(OpCode::DIV_F64);
-      break;
-    case ExpressionType::Modulo:
-      byteCode.AddOp(OpCode::MOD_F64);
-      break;
-    case ExpressionType::Equal:
-      byteCode.AddOp(OpCode::EQ_F64);
-      break;
-    case ExpressionType::NotEqual:
-      byteCode.AddOp(OpCode::NE_F64);
-      break;
-    case ExpressionType::GreaterThan:
-      byteCode.AddOp(OpCode::GT_F64);
-      break;
-    case ExpressionType::GreaterThanOrEqual:
-      byteCode.AddOp(OpCode::GE_F64);
-      break;
-    case ExpressionType::LessThan:
-      byteCode.AddOp(OpCode::LT_F64);
-      break;
-    case ExpressionType::LessThanOrEqual:
-      byteCode.AddOp(OpCode::LE_F64);
-      break;
-    default:
-      throw std::runtime_error(
-          "Unsupported binary operator for float 64 type.");
     }
-    break;
-  }
-  case TypeCode::Boolean:
-  case TypeCode::Char: {
-    if (node->NodeType() == ExpressionType::Equal) {
-      byteCode.AddOp(OpCode::EQ_I32);
-    } else if (node->NodeType() == ExpressionType::NotEqual) {
-      byteCode.AddOp(OpCode::NE_I32);
-    } else {
-      throw std::runtime_error("Unsupported binary expression type");
+    case TypeCode::Float64: {
+      switch (node->NodeType()) {
+      case ExpressionType::Add:
+        byteCode.AddOp(OpCode::ADD_F64);
+        break;
+      case ExpressionType::Subtract:
+        byteCode.AddOp(OpCode::SUB_F64);
+        break;
+      case ExpressionType::Multiply:
+        byteCode.AddOp(OpCode::MUL_F64);
+        break;
+      case ExpressionType::Divide:
+        byteCode.AddOp(OpCode::DIV_F64);
+        break;
+      case ExpressionType::Modulo:
+        byteCode.AddOp(OpCode::MOD_F64);
+        break;
+      case ExpressionType::Equal:
+        byteCode.AddOp(OpCode::EQ_F64);
+        break;
+      case ExpressionType::NotEqual:
+        byteCode.AddOp(OpCode::NE_F64);
+        break;
+      case ExpressionType::GreaterThan:
+        byteCode.AddOp(OpCode::GT_F64);
+        break;
+      case ExpressionType::GreaterThanOrEqual:
+        byteCode.AddOp(OpCode::GE_F64);
+        break;
+      case ExpressionType::LessThan:
+        byteCode.AddOp(OpCode::LT_F64);
+        break;
+      case ExpressionType::LessThanOrEqual:
+        byteCode.AddOp(OpCode::LE_F64);
+        break;
+      default:
+        throw std::runtime_error(
+            "Unsupported binary operator for float 64 type.");
+      }
+      break;
     }
-    break;
-  }
-  default: { throw std::runtime_error("Unsupported binary expression type"); }
+    case TypeCode::Boolean:
+    case TypeCode::Char: {
+      if (node->NodeType() == ExpressionType::Equal) {
+        byteCode.AddOp(OpCode::EQ_I32);
+      } else if (node->NodeType() == ExpressionType::NotEqual) {
+        byteCode.AddOp(OpCode::NE_I32);
+      } else {
+        throw std::runtime_error("Unsupported binary expression type");
+      }
+      break;
+    }
+    default: { throw std::runtime_error("Unsupported binary expression type"); }
+    }
   }
 }
 
@@ -563,9 +564,9 @@ void Compiler::VisitLambda(
   throw std::runtime_error("This function is not implemented");
 }
 
-void Compiler::VisitLoop(const LoopExpression *node, ByteCode &byteCode,
-                         std::vector<flint_bytecode::Constant> &constantPool) {
-  Visit(node->Initializer(), byteCode, constantPool);
+void Compiler::VisitWhileLoop(
+    const WhileLoopExpression *node, ByteCode &byteCode,
+    std::vector<flint_bytecode::Constant> &constantPool) {
   flint_bytecode::Label label1 = byteCode.CreateLabel(byteCode.Size());
 
   Visit(node->Condition(), byteCode, constantPool);
@@ -575,11 +576,12 @@ void Compiler::VisitLoop(const LoopExpression *node, ByteCode &byteCode,
 
   Visit(node->Body(), byteCode, constantPool);
   byteCode.AddOp(OpCode::JUMP);
-  byteCode.AddI16(byteCode.Size() + sizeof(int16_t) - label1.Location());
+  byteCode.AddI16(static_cast<int32_t>(label1.Location()) -
+                  (byteCode.Size() + static_cast<int32_t>(sizeof(int16_t))));
 
-  byteCode.Rewrite(label2,
-                   byteCode.Size() -
-                       static_cast<int>(label1.Location() + sizeof(int16_t)));
+  byteCode.Rewrite(
+      label2, byteCode.Size() -
+                  static_cast<int32_t>(label2.Location() + sizeof(int16_t)));
 }
 
 void Compiler::VisitDefault(
@@ -616,7 +618,8 @@ void Compiler::VisitDefault(
 void Compiler::VisitVariableDeclaration(
     const VariableDeclarationExpression *node, ByteCode &byteCode,
     std::vector<flint_bytecode::Constant> &constantPool) {
-  NameInfo nameInfo = nameLocator.GetNameInfo(node, LocationKind::FunctionVariable);
+  NameInfo nameInfo =
+      nameLocator.GetNameInfo(node, LocationKind::FunctionVariable);
   int offset = nameInfo.Number();
   Visit(node->Initializer(), byteCode, constantPool);
   const Type *type = typeChecker.GetType(node);
@@ -652,6 +655,63 @@ void Compiler::VisitVariableDeclaration(
         "This type is not supported by the variable declaration expression.",
         static_cast<const Expression *>(node), nullptr);
   }
+  }
+}
+
+void Compiler::CompileAssignment(
+    const BinaryExpression *node, ByteCode &byteCode,
+    std::vector<flint_bytecode::Constant> &constantPool) {
+  TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
+  if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode()) {
+    spdlog::error("Assignment type mismatch.");
+    throw TreeException(__FILE__, __LINE__, "Assignment type mismatch.",
+                        static_cast<const Expression *>(node), nullptr);
+  } else {
+    if (nameLocator.ExistsNameInfo(node->Left(),
+                                   LocationKind::FunctionVariable)) {
+      NameInfo nameInfo =
+          nameLocator.GetNameInfo(node->Left(), LocationKind::FunctionVariable);
+      int offset = nameInfo.Number();
+      switch (typeCode) {
+      case TypeCode::Int32: {
+        byteCode.AddOp(OpCode::POP_LOCAL_I32);
+        byteCode.AddByte(static_cast<Byte>(offset));
+        break;
+      }
+      case TypeCode::Int64: {
+        byteCode.AddOp(OpCode::POP_LOCAL_I64);
+        byteCode.AddByte(static_cast<Byte>(offset));
+        break;
+      }
+      case TypeCode::Float32: {
+        byteCode.AddOp(OpCode::POP_LOCAL_F32);
+        byteCode.AddByte(static_cast<Byte>(offset));
+        break;
+      }
+      case TypeCode::Float64: {
+        byteCode.AddOp(OpCode::POP_LOCAL_F64);
+        byteCode.AddByte(static_cast<Byte>(offset));
+        break;
+      }
+      default: {
+        spdlog::error(
+            "Assignment to the local variable of this type is not supported.");
+        throw TreeException(
+            __FILE__, __LINE__,
+            "Assignment to the local variable of this type is not supported.",
+            static_cast<const Expression *>(node), nullptr);
+      }
+      }
+    } else if (nameLocator.ExistsNameInfo(node->Left(),
+                                          LocationKind::GlobalVariable)) {
+      NameInfo nameInfo =
+          nameLocator.GetNameInfo(node->Left(), LocationKind::GlobalVariable);
+      int offset = nameInfo.Number();
+      /* TODO */
+      spdlog::error("Assignment to a global variable is not supported.");
+      throw std::runtime_error(
+          "Assignment to a global variable is not supported.");
+    }
   }
 }
 
@@ -695,7 +755,9 @@ Compiler::CompileFunction(const std::string &name,
     }
     }
   }
-  int localVariableCount = nameLocator.GetNameInfo(node, LocationKind::FunctionVariableCount).Number();
+  int localVariableCount =
+      nameLocator.GetNameInfo(node, LocationKind::FunctionVariableCount)
+          .Number();
   Byte locals = static_cast<Byte>(localVariableCount -
                                   static_cast<int>(node->Parameters().size()));
   spdlog::info("Finish compiling function \"{}\".", name);
@@ -785,12 +847,15 @@ void Compiler::CompileNamespace(
     if (funcDecl->IsNativeFunction()) {
       auto function = CompileNativeFunction(
           Utility::UTF32ToUTF8(funcDecl->Name()), funcDecl);
-      int index = nameLocator.GetNameInfo(funcDecl, LocationKind::NativeFunction).Number();
+      int index =
+          nameLocator.GetNameInfo(funcDecl, LocationKind::NativeFunction)
+              .Number();
       nativeFunctions.at(index) = function;
     } else {
       auto function =
           CompileFunction(Utility::UTF32ToUTF8(funcDecl->Name()), funcDecl);
-      int index = nameLocator.GetNameInfo(funcDecl, LocationKind::Function).Number();
+      int index =
+          nameLocator.GetNameInfo(funcDecl, LocationKind::Function).Number();
       functions.at(index) = function;
 
       if (funcDecl->Name() == U"Main") {

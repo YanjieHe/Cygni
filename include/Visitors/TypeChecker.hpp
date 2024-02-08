@@ -37,7 +37,7 @@ public:
                         Scope<const Type *> *scope) override;
   const Type *VisitLambda(const LambdaExpression *node,
                           Scope<const Type *> *parent) override;
-  const Type *VisitLoop(const LoopExpression *node,
+  const Type *VisitWhileLoop(const WhileLoopExpression *node,
                         Scope<const Type *> *parent) override;
   const Type *VisitDefault(const DefaultExpression *node,
                            Scope<const Type *> *scope) override;

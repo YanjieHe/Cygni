@@ -352,13 +352,11 @@ ExpPtr Parser::WhileStatement() {
   const Token &start = Look();
   Match(TokenTag::While);
   Match(TokenTag::LeftParenthesis);
-  auto empty = expressionFactory.Create<DefaultExpression>(
-      Pos(start), TypeFactory::CreateBasicType(TypeCode::Unknown));
   auto condition = ParseOr();
   Match(TokenTag::RightParenthesis);
   auto body = ParseBlock();
-  return expressionFactory.Create<LoopExpression>(Pos(start), empty, condition,
-                                                  body);
+  return expressionFactory.Create<WhileLoopExpression>(Pos(start), condition,
+                                                       body);
 }
 
 Expressions::VariableDeclarationExpression *

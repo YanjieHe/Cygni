@@ -288,10 +288,9 @@ const Type *TypeChecker::VisitLambda(const LambdaExpression *node,
   return Types.CreateCallableType(argumentTypes, returnType);
 }
 
-const Type *TypeChecker::VisitLoop(const LoopExpression *node,
-                                   Scope<const Type *> *parent) {
+const Type *TypeChecker::VisitWhileLoop(const WhileLoopExpression *node,
+                                        Scope<const Type *> *parent) {
   Scope<const Type *> scope(parent);
-  Visit(node->Initializer(), &scope);
   const Type *type = Visit(node->Condition(), &scope);
   if (type->GetTypeCode() == TypeCode::Boolean) {
     return Visit(node->Body(), &scope);
@@ -315,6 +314,9 @@ TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpression *node,
   if (node->GetType()->GetTypeCode() == TypeCode::Unknown) {
     scope->Declare(node->Name(), initializer);
     Register(node, initializer);
+    spdlog::info(
+        "Inferred the type of the variable '{}' based on the assigned value.",
+        Utility::UTF32ToUTF8(node->Name()));
   } else {
     if (TypeFactory::AreTypesEqual(node->GetType(), initializer)) {
       scope->Declare(node->Name(), initializer);
