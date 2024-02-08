@@ -312,7 +312,23 @@ const Type *
 TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpression *node,
                                       Scope<const Type *> *scope) {
   const Type *initializer = Visit(node->Initializer(), scope);
-  scope->Declare(node->Name(), initializer);
+  if (node->GetType()->GetTypeCode() == TypeCode::Unknown) {
+    scope->Declare(node->Name(), initializer);
+    Register(node, initializer);
+  } else {
+    if (TypeFactory::AreTypesEqual(node->GetType(), initializer)) {
+      scope->Declare(node->Name(), initializer);
+      Register(node, initializer);
+    } else {
+      spdlog::error("The value assigned to variable '{}' does not match its "
+                    "declared type.",
+                    Utility::UTF32ToUTF8(node->Name()));
+      throw TreeException(
+          __FILE__, __LINE__,
+          "The assigned value does not match the declared variable type.",
+          static_cast<const Expression *>(node), nullptr);
+    }
+  }
 
   return TypeFactory::CreateBasicType(TypeCode::Empty);
 }
@@ -387,7 +403,7 @@ bool TypeChecker::CheckFunctionType(const Type *declaration,
         if (declarationCallableType->GetReturnType()->GetTypeCode() ==
             TypeCode::Empty) {
           spdlog::info("The declared function's return type is 'Void,' "
-                        "allowing any return type from the function body.");
+                       "allowing any return type from the function body.");
 
           return true;
         } else {

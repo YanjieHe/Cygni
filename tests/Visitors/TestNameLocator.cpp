@@ -75,9 +75,9 @@ TEST_CASE("test variable locating", "[Variable]") {
   bool checkedY = false;
   bool checkedZ = false;
   for (const auto &item : nameLocator.NameInfoTable()) {
-    if (item.first->NodeType() == ExpressionType::Parameter) {
+    if (item.first.first->NodeType() == ExpressionType::Parameter) {
       const ParameterExpression *parameter =
-          static_cast<const ParameterExpression *>(item.first);
+          static_cast<const ParameterExpression *>(item.first.first);
 
       if (parameter->Name() == U"x") {
         REQUIRE(item.second.Kind() == LocationKind::FunctionVariable);

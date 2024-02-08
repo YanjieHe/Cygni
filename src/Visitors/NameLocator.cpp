@@ -21,26 +21,27 @@ void NameLocator::VisitConstant(const ConstantExpression *node,
   /* TODO: support duplicated constants. */
   NameInfo nameInfo(LocationKind::FunctionConstant,
                     scope->Get(LOCAL_CONSTANT_COUNT).Number());
-  nameInfoTable.insert({static_cast<const Expression *>(node), nameInfo});
+  Register(node, nameInfo);
   scope->Get(LOCAL_CONSTANT_COUNT).Number()++;
 }
 void NameLocator::VisitParameter(const ParameterExpression *node,
                                  Scope<NameInfo> *scope) {
   if (node->Prefix().empty()) {
     NameInfo nameInfo = scope->Get(node->Name());
-    nameInfoTable.insert({static_cast<const Expression *>(node), nameInfo});
+    Register(node, nameInfo);
   } else {
     Namespace *ns =
         namespaceFactory.Search(namespaceFactory.GetRoot(), node->Prefix());
     if (ns) {
       if (ns->GlobalVariables().ContainsKey(node->Name())) {
         const NameInfo &nameInfo =
-            nameInfoTable.at(ns->GlobalVariables().GetItemByKey(node->Name()));
+            GetNameInfo(ns->GlobalVariables().GetItemByKey(node->Name()),
+                        LocationKind::GlobalVariable);
 
         return Register(node, nameInfo);
       } else if (ns->Functions().ContainsKey(node->Name())) {
-        const NameInfo &nameInfo =
-            nameInfoTable.at(ns->Functions().GetItemByKey(node->Name()));
+        const NameInfo &nameInfo = GetNameInfo(
+            ns->Functions().GetItemByKey(node->Name()), LocationKind::Function);
 
         return Register(node, nameInfo);
       } else {
@@ -86,6 +87,11 @@ void NameLocator::VisitLambda(const LambdaExpression *node,
     scope.Get(LOCAL_VARIABLE_COUNT).Number()++;
   }
   Visit(node->Body(), &scope);
+
+  Register(node, NameInfo(LocationKind::FunctionVariableCount,
+                          scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+  Register(node, NameInfo(LocationKind::FunctionConstantCount,
+                          scope.Get(LOCAL_CONSTANT_COUNT).Number()));
 }
 void NameLocator::VisitLoop(const LoopExpression *node,
                             Scope<NameInfo> *parent) {
@@ -98,9 +104,10 @@ void NameLocator::VisitDefault(const DefaultExpression *node,
                                Scope<NameInfo> *scope) {}
 void NameLocator::VisitVariableDeclaration(
     const VariableDeclarationExpression *node, Scope<NameInfo> *scope) {
-  scope->Declare(node->Name(),
-                 NameInfo(LocationKind::FunctionVariable,
-                          scope->Get(LOCAL_VARIABLE_COUNT).Number()));
+  NameInfo nameInfo(LocationKind::FunctionVariable,
+                    scope->Get(LOCAL_VARIABLE_COUNT).Number());
+  scope->Declare(node->Name(), nameInfo);
+  Register(node, nameInfo);
   scope->Get(LOCAL_VARIABLE_COUNT).Number()++;
   Visit(node->Initializer(), scope);
 }
@@ -112,7 +119,7 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
     NameInfo nameInfo(LocationKind::GlobalVariable,
                       scope->Get(GLOBAL_VARIABLE_COUNT).Number());
     scope->Declare(varDecl->Name(), nameInfo);
-    nameInfoTable.insert({static_cast<const Expression *>(varDecl), nameInfo});
+    Register(varDecl, nameInfo);
     scope->Get(GLOBAL_VARIABLE_COUNT).Number()++;
   }
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
@@ -120,16 +127,14 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
       NameInfo nameInfo(LocationKind::NativeFunction,
                         scope->Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
       scope->Declare(funcDecl->Name(), nameInfo);
-      nameInfoTable.insert(
-          {static_cast<const Expression *>(funcDecl), nameInfo});
+      Register(funcDecl, nameInfo);
       scope->Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number()++;
 
     } else {
       NameInfo nameInfo(LocationKind::Function,
                         scope->Get(GLOBAL_FUNCTION_COUNT).Number());
       scope->Declare(funcDecl->Name(), nameInfo);
-      nameInfoTable.insert(
-          {static_cast<const Expression *>(funcDecl), nameInfo});
+      Register(funcDecl, nameInfo);
       scope->Get(GLOBAL_FUNCTION_COUNT).Number()++;
     }
   }
@@ -149,7 +154,7 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
 }
 
 void NameLocator::Register(const Expression *node, const NameInfo &nameInfo) {
-  nameInfoTable.insert({node, nameInfo});
+  nameInfoTable.insert({{node, nameInfo.Kind()}, nameInfo});
 }
 
 }; /* namespace Visitors */

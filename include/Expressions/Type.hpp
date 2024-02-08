@@ -17,7 +17,7 @@ enum class TypeCode {
   Int64 = 8,
   String = 9,
   Union = 10,
-  Unknown
+  Unknown = 11
 };
 
 class Type {
@@ -134,14 +134,14 @@ private:
 
 public:
   TypeFactory() = default;
-  TypeFactory(const TypeFactory&) = delete;
+  TypeFactory(const TypeFactory &) = delete;
   ~TypeFactory();
 
   static Type *CreateBasicType(TypeCode typeCode);
   static bool IsBasicType(TypeCode typeCode);
   static bool AreTypesEqual(const Type *a, const Type *b);
 
-  ArrayType* CreateArrayType(const Type* elementType);
+  ArrayType *CreateArrayType(const Type *elementType);
   const Type *CreateUnionType(const Type *a, const Type *b);
   CallableType *CreateCallableType(std::vector<const Type *> arguments,
                                    const Type *returnType);

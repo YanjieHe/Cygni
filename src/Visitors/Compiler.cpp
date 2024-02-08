@@ -417,9 +417,9 @@ void Compiler::VisitConstant(
 void Compiler::VisitParameter(
     const ParameterExpression *node, ByteCode &byteCode,
     std::vector<flint_bytecode::Constant> &constantPool) {
-  const NameInfo &nameInfo = nameLocator.GetNameInfo(node);
-  switch (nameInfo.Kind()) {
-  case LocationKind::FunctionVariable: {
+  if (nameLocator.ExistsNameInfo(node, LocationKind::FunctionVariable)) {
+    const NameInfo &nameInfo =
+        nameLocator.GetNameInfo(node, LocationKind::FunctionVariable);
     switch (typeChecker.GetType(node)->GetTypeCode()) {
     case TypeCode::Int32:
     case TypeCode::Boolean:
@@ -452,9 +452,9 @@ void Compiler::VisitParameter(
       throw std::runtime_error("Unsupported parameter expression type");
     }
     }
-    break;
-  }
-  case LocationKind::GlobalVariable: {
+  } else if (nameLocator.ExistsNameInfo(node, LocationKind::GlobalVariable)) {
+    const NameInfo &nameInfo =
+        nameLocator.GetNameInfo(node, LocationKind::GlobalVariable);
     switch (typeChecker.GetType(node)->GetTypeCode()) {
     case TypeCode::Int32:
     case TypeCode::Boolean:
@@ -487,8 +487,8 @@ void Compiler::VisitParameter(
       throw std::runtime_error("Unsupported parameter expression type");
     }
     }
-    break;
-  }
+  } else {
+    throw std::runtime_error("Unsupported parameter expression location kind");
   }
 }
 
@@ -531,22 +531,25 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
     Visit(argument, byteCode, constantPool);
   }
   if (node->Function()->NodeType() == ExpressionType::Parameter) {
-    const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function());
-    if (nameInfo.Kind() == LocationKind::Function) {
+    if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function)) {
+      const NameInfo &nameInfo =
+          nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
       byteCode.AddOp(OpCode::INVOKE_FUNCTION);
       byteCode.AddByte(constantPool.size());
       constantPool.push_back(flint_bytecode::Constant(
           flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION,
           nameInfo.Number()));
-    } else if (nameInfo.Kind() == LocationKind::NativeFunction) {
+    } else if (nameLocator.ExistsNameInfo(node->Function(),
+                                          LocationKind::NativeFunction)) {
+      const NameInfo &nameInfo = nameLocator.GetNameInfo(
+          node->Function(), LocationKind::NativeFunction);
       byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
       byteCode.AddByte(constantPool.size());
       constantPool.push_back(flint_bytecode::Constant(
           flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION,
           nameInfo.Number()));
     } else {
-      cout << "location kind: " << (int)nameInfo.Kind() << endl;
-      throw std::runtime_error("Unsupported call expression type");
+      throw std::runtime_error("Unsupported call expression location kind");
     }
   } else {
     cout << "node type: " << (int)node->Function()->NodeType() << endl;
@@ -613,7 +616,43 @@ void Compiler::VisitDefault(
 void Compiler::VisitVariableDeclaration(
     const VariableDeclarationExpression *node, ByteCode &byteCode,
     std::vector<flint_bytecode::Constant> &constantPool) {
-  throw std::runtime_error("variable declaration is not supported");
+  NameInfo nameInfo = nameLocator.GetNameInfo(node, LocationKind::FunctionVariable);
+  int offset = nameInfo.Number();
+  Visit(node->Initializer(), byteCode, constantPool);
+  const Type *type = typeChecker.GetType(node);
+  switch (type->GetTypeCode()) {
+  case TypeCode::Boolean:
+  case TypeCode::Char:
+  case TypeCode::Int32: {
+    byteCode.AddOp(OpCode::POP_LOCAL_I32);
+    byteCode.AddByte(static_cast<Byte>(offset));
+    break;
+  }
+  case TypeCode::Int64: {
+    byteCode.AddOp(OpCode::POP_LOCAL_I64);
+    byteCode.AddByte(static_cast<Byte>(offset));
+    break;
+  }
+  case TypeCode::Float32: {
+    byteCode.AddOp(OpCode::POP_LOCAL_F32);
+    byteCode.AddByte(static_cast<Byte>(offset));
+    break;
+  }
+  case TypeCode::Float64: {
+    byteCode.AddOp(OpCode::POP_LOCAL_F64);
+    byteCode.AddByte(static_cast<Byte>(offset));
+    break;
+  }
+  default: {
+    spdlog::error("The variable declaration expression does not support this "
+                  "type. Variable name: '{}'.",
+                  Utility::UTF32ToUTF8(node->Name()));
+    throw TreeException(
+        __FILE__, __LINE__,
+        "This type is not supported by the variable declaration expression.",
+        static_cast<const Expression *>(node), nullptr);
+  }
+  }
 }
 
 flint_bytecode::Function
@@ -656,8 +695,11 @@ Compiler::CompileFunction(const std::string &name,
     }
     }
   }
+  int localVariableCount = nameLocator.GetNameInfo(node, LocationKind::FunctionVariableCount).Number();
+  Byte locals = static_cast<Byte>(localVariableCount -
+                                  static_cast<int>(node->Parameters().size()));
   spdlog::info("Finish compiling function \"{}\".", name);
-  return flint_bytecode::Function(name, 0, 0, node->Parameters().size(),
+  return flint_bytecode::Function(name, 0, locals, node->Parameters().size(),
                                   constantPool, byteCode);
 }
 
@@ -743,12 +785,12 @@ void Compiler::CompileNamespace(
     if (funcDecl->IsNativeFunction()) {
       auto function = CompileNativeFunction(
           Utility::UTF32ToUTF8(funcDecl->Name()), funcDecl);
-      int index = nameLocator.GetNameInfo(funcDecl).Number();
+      int index = nameLocator.GetNameInfo(funcDecl, LocationKind::NativeFunction).Number();
       nativeFunctions.at(index) = function;
     } else {
       auto function =
           CompileFunction(Utility::UTF32ToUTF8(funcDecl->Name()), funcDecl);
-      int index = nameLocator.GetNameInfo(funcDecl).Number();
+      int index = nameLocator.GetNameInfo(funcDecl, LocationKind::Function).Number();
       functions.at(index) = function;
 
       if (funcDecl->Name() == U"Main") {

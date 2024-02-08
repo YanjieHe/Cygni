@@ -4,6 +4,7 @@
 #include "Visitors/Visitor.hpp"
 #include "Visitors/Scope.hpp"
 #include "Expressions/Namespace.hpp"
+#include "Utility/HashPair.hpp"
 #include <stack>
 
 namespace Cygni {
@@ -38,17 +39,24 @@ public:
 
 class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *> {
 private:
-  std::unordered_map<const Expression *, NameInfo> nameInfoTable;
+  std::unordered_map<std::pair<const Expression *, LocationKind>, NameInfo,
+                     Utility::HashPair> nameInfoTable;
   NamespaceFactory &namespaceFactory;
   std::stack<Namespace *> namespaceStack;
 
 public:
   NameLocator(NamespaceFactory &namespaceFactory);
-  const std::unordered_map<const Expression *, NameInfo> &NameInfoTable() {
+  const std::unordered_map<std::pair<const Expression *, LocationKind>,
+                           NameInfo, Utility::HashPair> &
+  NameInfoTable() {
     return nameInfoTable;
   }
-  const NameInfo &GetNameInfo(const Expression *node) const {
-    return nameInfoTable.at(node);
+  const NameInfo &GetNameInfo(const Expression *node,
+                              LocationKind locationKind) const {
+    return nameInfoTable.at({node, locationKind});
+  }
+  bool ExistsNameInfo(const Expression *node, LocationKind locationKind) const {
+    return nameInfoTable.count({node, locationKind}) > 0;
   }
 
   void VisitBinary(const BinaryExpression *node,
@@ -78,7 +86,8 @@ private:
 
 const std::u32string LOCAL_CONSTANT_COUNT = U"$LOCAL_CONSTANT_COUNT";
 const std::u32string LOCAL_VARIABLE_COUNT = U"$LOCAL_VARIABLE_COUNT";
-const std::u32string GLOBAL_NATIVE_FUNCTION_COUNT = U"$GLOBAL_NATIVE_FUNCTION_COUNT";
+const std::u32string GLOBAL_NATIVE_FUNCTION_COUNT =
+    U"$GLOBAL_NATIVE_FUNCTION_COUNT";
 const std::u32string GLOBAL_FUNCTION_COUNT = U"$GLOBAL_FUNCTION_COUNT";
 const std::u32string GLOBAL_VARIABLE_COUNT = U"$GLOBAL_VARIABLE_COUNT";
 }; /* namespace Visitors */
