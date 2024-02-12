@@ -414,6 +414,32 @@ Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(
   }
 }
 
+Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable() {
+  const Token &start = Look();
+  Match(TokenTag::Var);
+  std::u32string name = Match(TokenTag::Identifier).text;
+  Type *type;
+  if (Look().tag == TokenTag::Colon) {
+    Match(TokenTag::Colon);
+    type = ParseType();
+  } else {
+    spdlog::error(
+        "Type annotation is required for declaring a global variable.");
+    throw ParserException(
+        __FILE__, __LINE__,
+        SourceRange(document, Look().line, Look().column, Look().line,
+                    Look().column + Look().text.size()),
+        "Type annotation is required for declaring a global variable.",
+        nullptr);
+  }
+  Match(TokenTag::Assign);
+  auto initializer = ParseOr();
+  Match(TokenTag::Semicolon);
+
+  return expressionFactory.Create<VariableDeclarationExpression>(
+      Pos(start), name, type, initializer);
+}
+
 std::vector<ExpPtr> Parser::ParseArguments() {
   vector<ExpPtr> arguments;
   Match(TokenTag::LeftParenthesis);
@@ -487,7 +513,7 @@ void Parser::ParseNamespace() {
     while (Look().tag != TokenTag::RightBrace) {
       switch (Look().tag) {
       case TokenTag::Var: {
-        VariableDeclarationExpression *varDecl = VariableDeclarationStatement();
+        VariableDeclarationExpression *varDecl = ParseGlobalVariable();
         current->GlobalVariables().AddItem(varDecl->Name(), varDecl);
         break;
       }
@@ -515,13 +541,16 @@ void Parser::ParseNamespace() {
         break;
       }
       default: {
-        throw ParserException(
-            __FILE__, __LINE__,
-            SourceRange(document, Look().line, Look().column, Look().line,
-                        Look().column + Look().text.size()),
-            "Unexpected token 'tag' encountered while parsing "
-            "the module. Expected 'var' or 'func'.",
-            nullptr);
+        auto sv = magic_enum::enum_name<TokenTag>(Look().tag);
+        std::string tagName(sv.begin(), sv.end());
+        throw ParserException(__FILE__, __LINE__,
+                              SourceRange(document, Look().line, Look().column,
+                                          Look().line,
+                                          Look().column + Look().text.size()),
+                              "Unexpected token '" + tagName +
+                                  "' encountered while parsing "
+                                  "the module. Expected 'var' or 'func'.",
+                              nullptr);
       }
       }
     }

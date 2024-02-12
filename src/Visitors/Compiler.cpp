@@ -456,32 +456,36 @@ void Compiler::VisitParameter(
   } else if (nameLocator.ExistsNameInfo(node, LocationKind::GlobalVariable)) {
     const NameInfo &nameInfo =
         nameLocator.GetNameInfo(node, LocationKind::GlobalVariable);
+    Byte constantPoolIndex = static_cast<Byte>(constantPool.size());
+    constantPool.push_back(flint_bytecode::Constant(
+        flint_bytecode::ConstantKind::CONSTANT_KIND_GLOBAL_VARIABLE,
+        static_cast<int32_t>(nameInfo.Number())));
     switch (typeChecker.GetType(node)->GetTypeCode()) {
     case TypeCode::Int32:
     case TypeCode::Boolean:
     case TypeCode::Char: {
       byteCode.AddOp(OpCode::PUSH_GLOBAL_I32);
-      byteCode.AddByte(nameInfo.Number());
+      byteCode.AddByte(constantPoolIndex);
       break;
     }
     case TypeCode::Int64: {
       byteCode.AddOp(OpCode::PUSH_GLOBAL_I64);
-      byteCode.AddByte(nameInfo.Number());
+      byteCode.AddByte(constantPoolIndex);
       break;
     }
     case TypeCode::Float32: {
       byteCode.AddOp(OpCode::PUSH_GLOBAL_F32);
-      byteCode.AddByte(nameInfo.Number());
+      byteCode.AddByte(constantPoolIndex);
       break;
     }
     case TypeCode::Float64: {
       byteCode.AddOp(OpCode::PUSH_GLOBAL_F64);
-      byteCode.AddByte(nameInfo.Number());
+      byteCode.AddByte(constantPoolIndex);
       break;
     }
     case TypeCode::String: {
       byteCode.AddOp(OpCode::PUSH_GLOBAL_OBJECT);
-      byteCode.AddByte(nameInfo.Number());
+      byteCode.AddByte(constantPoolIndex);
       break;
     }
     default: {
@@ -839,9 +843,28 @@ std::vector<flint_bytecode::NativeLibrary> Compiler::GetNativeLibraries() {
 }
 
 void Compiler::CompileNamespace(
+    std::vector<flint_bytecode::GlobalVariable> &globalVariables,
     std::vector<flint_bytecode::Function> &functions,
     std::vector<flint_bytecode::NativeFunction> &nativeFunctions) {
   Namespace *top = namespaceStack.top();
+
+  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
+    std::u32string name = varDecl->Name() + U"#Initializer";
+    if (top->Functions().ContainsKey(name)) {
+      int globalVariableIndex =
+          nameLocator.GetNameInfo(varDecl, LocationKind::GlobalVariable)
+              .Number();
+      LambdaExpression *initializer = top->Functions().GetItemByKey(name);
+      int initializerIndex =
+          nameLocator.GetNameInfo(initializer, LocationKind::Function).Number();
+      globalVariables.at(globalVariableIndex) = flint_bytecode::GlobalVariable(
+          Utility::UTF32ToUTF8(varDecl->Name()), initializerIndex);
+    } else {
+      throw TreeException(__FILE__, __LINE__,
+                          "Global variable initializer is missing.",
+                          static_cast<const Expression *>(varDecl), nullptr);
+    }
+  }
 
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
     if (funcDecl->IsNativeFunction()) {
@@ -874,7 +897,7 @@ void Compiler::CompileNamespace(
 
   for (const auto &current : top->Children().GetAllItems()) {
     namespaceStack.push(current);
-    CompileNamespace(functions, nativeFunctions);
+    CompileNamespace(globalVariables, functions, nativeFunctions);
     namespaceStack.pop();
     spdlog::info("Finish compiling namespace \"{}\".",
                  Utility::UTF32ToUTF8(current->Name()));

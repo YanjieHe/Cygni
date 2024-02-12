@@ -16,10 +16,11 @@ private:
   std::unordered_map<const Expression *, const Type *> nodeTypes;
   TypeFactory Types;
   NamespaceFactory &namespaceFactory;
+  ExpressionFactory& expressionFactory;
   std::stack<Namespace *> namespaceStack;
 
 public:
-  TypeChecker(NamespaceFactory &namespaceFactory);
+  TypeChecker(NamespaceFactory &namespaceFactory, ExpressionFactory& expressionFactory);
 
   const Type *VisitBinary(const BinaryExpression *node,
                           Scope<const Type *> *scope) override;
@@ -38,7 +39,7 @@ public:
   const Type *VisitLambda(const LambdaExpression *node,
                           Scope<const Type *> *parent) override;
   const Type *VisitWhileLoop(const WhileLoopExpression *node,
-                        Scope<const Type *> *parent) override;
+                             Scope<const Type *> *parent) override;
   const Type *VisitDefault(const DefaultExpression *node,
                            Scope<const Type *> *scope) override;
   const Type *
@@ -49,9 +50,12 @@ public:
 
   void CheckNamespace(Scope<const Type *> *parent);
 
+  void CheckGlobalVariable(const VariableDeclarationExpression *node,
+                           Scope<const Type *> *parent, Namespace * current);
+
 private:
   const Type *Register(const Expression *node, const Type *type);
-  bool CheckFunctionType(const Type* declaration, const Type* actual);
+  bool CheckFunctionType(const Type *declaration, const Type *actual);
 };
 
 }; /* namespace Visitors */

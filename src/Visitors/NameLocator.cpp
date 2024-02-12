@@ -121,6 +121,7 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
     Register(varDecl, nameInfo);
     scope->Get(GLOBAL_VARIABLE_COUNT).Number()++;
   }
+
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
     if (funcDecl->IsNativeFunction()) {
       NameInfo nameInfo(LocationKind::NativeFunction,
@@ -138,9 +139,6 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent) {
     }
   }
 
-  for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
-    VisitVariableDeclaration(varDecl, scope);
-  }
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
     VisitLambda(funcDecl, scope);
   }

@@ -56,7 +56,7 @@ TEST_CASE("test variable locating", "[Variable]") {
 
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.FunctionDeclarationStatement({});
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);

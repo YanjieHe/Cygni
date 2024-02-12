@@ -26,7 +26,8 @@ TEST_CASE("test compiler", "[Compiler]") {
   Parser parser(tokens, sourceCodeFile);
   parser.ParseNamespace();
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(),
+                          parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   typeChecker.CheckNamespace(&scope);
@@ -37,20 +38,24 @@ TEST_CASE("test compiler", "[Compiler]") {
                         NameInfo(LocationKind::Global_Variable_Count, 0));
   nameInfoScope.Declare(GLOBAL_FUNCTION_COUNT,
                         NameInfo(LocationKind::Global_Function_Count, 0));
-  nameInfoScope.Declare(GLOBAL_NATIVE_FUNCTION_COUNT,
-                        NameInfo(LocationKind::Global_Native_Function_Count, 0));
+  nameInfoScope.Declare(
+      GLOBAL_NATIVE_FUNCTION_COUNT,
+      NameInfo(LocationKind::Global_Native_Function_Count, 0));
   nameLocator.CheckNamespace(&nameInfoScope);
 
   REQUIRE(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number() == 2);
 
   Compiler compiler(typeChecker, nameLocator, parser.GetNamespaceFactory());
+  std::vector<flint_bytecode::GlobalVariable> globalVariables(
+      nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
   std::vector<flint_bytecode::Function> functions(
       nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
   std::vector<flint_bytecode::NativeFunction> nativeFunctions(
       nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
-  compiler.CompileNamespace(functions, nativeFunctions);
-  flint_bytecode::ByteCodeProgram program(
-      {}, {}, functions, {}, nativeFunctions, compiler.EntryPoint());
+  compiler.CompileNamespace(globalVariables, functions, nativeFunctions);
+  flint_bytecode::ByteCodeProgram program(globalVariables, {}, functions, {},
+                                          nativeFunctions,
+                                          compiler.EntryPoint());
 
   ByteCode byteCode;
   program.Compile(byteCode);

@@ -27,7 +27,7 @@ TEST_CASE("test (36 / 9)", "[Arithmetic]") {
 
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.ParseExpr();
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -56,7 +56,7 @@ TEST_CASE("test variable declaration", "[Variable]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.ParseBlock();
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -88,7 +88,7 @@ TEST_CASE("test shadowing outer variable", "[Variable]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.ParseBlock();
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -121,7 +121,7 @@ TEST_CASE("test conditional", "[Conditional]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.Statement();
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -157,7 +157,7 @@ TEST_CASE("test loop", "[WhileLoop]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.ParseBlock();
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);
@@ -202,7 +202,7 @@ TEST_CASE("test function declaration", "[Function]") {
   Parser parser(tokens, sourceCodeFile);
   auto exp = parser.FunctionDeclarationStatement({});
 
-  TypeChecker typeChecker(parser.GetNamespaceFactory());
+  TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
   Scope<const Type *> scope;
   const Type *type = typeChecker.Visit(exp, &scope);

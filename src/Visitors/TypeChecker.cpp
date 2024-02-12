@@ -10,8 +10,9 @@ using std::endl;
 namespace Cygni {
 namespace Visitors {
 
-TypeChecker::TypeChecker(NamespaceFactory &namespaceFactory)
-    : namespaceFactory{namespaceFactory} {
+TypeChecker::TypeChecker(NamespaceFactory &namespaceFactory,
+                         ExpressionFactory &expressionFactory)
+    : namespaceFactory{namespaceFactory}, expressionFactory{expressionFactory} {
   namespaceStack.push(namespaceFactory.GetRoot());
   spdlog::debug("Type checker initialized.");
 }
@@ -343,16 +344,19 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent) {
   Namespace *top = namespaceStack.top();
   Scope<const Type *> *scope(parent);
 
+  /* Declare the types of global variables. */
   for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
     scope->Declare(varDecl->Name(), varDecl->GetType());
   }
+
+  /* Declare the types of functions. */
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
     CallableType *callableType = funcDecl->GetCallableType(Types);
     scope->Declare(funcDecl->Name(), callableType);
   }
 
   for (const auto &varDecl : top->GlobalVariables().GetAllItems()) {
-    VisitVariableDeclaration(varDecl, scope);
+    CheckGlobalVariable(varDecl, scope, top);
   }
   for (const auto &funcDecl : top->Functions().GetAllItems()) {
     const Type *actualType = VisitLambda(funcDecl, scope);
@@ -369,6 +373,35 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent) {
     namespaceStack.push(current);
     CheckNamespace(scope);
     namespaceStack.pop();
+  }
+}
+
+void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
+                                      Scope<const Type *> *parent,
+                                      Namespace *current) {
+  Scope<const Type *> *scope(parent);
+  const Type *initializerType = Visit(node->Initializer(), scope);
+  if (TypeFactory::AreTypesEqual(node->GetType(), initializerType)) {
+    scope->Declare(node->Name(), initializerType);
+    Register(node, initializerType);
+
+    /* Add the initializer to the namespace. */
+    std::u32string initializerName = node->Name() + U"#Initializer";
+    LambdaExpression *initializer = expressionFactory.Create<LambdaExpression>(
+        node->Initializer()->GetSourceRange(), initializerName,
+        node->Initializer(), std::vector<ParameterExpression *>{},
+        initializerType, std::vector<Annotation>{});
+    current->Functions().AddItem(initializerName, initializer);
+    parent->Declare(initializerName, initializer->GetCallableType(Types));
+  } else {
+    spdlog::error(
+        "The value assigned to global variable '{}' does not match its "
+        "declared type.",
+        Utility::UTF32ToUTF8(node->Name()));
+    throw TreeException(
+        __FILE__, __LINE__,
+        "The assigned value does not match the declared variable type.",
+        static_cast<const Expression *>(node), nullptr);
   }
 }
 

@@ -235,16 +235,16 @@ public:
 class LambdaExpression : public Expression {
 private:
   std::u32string name;
-  Expression *body;
+  const Expression *body;
   std::vector<ParameterExpression *> parameters;
-  Type *returnType;
+  const Type *returnType;
   std::vector<Annotation> annotations;
 
 public:
   LambdaExpression(SourceRange sourceRange, std::u32string name,
-                   Expression *body,
+                   const Expression *body,
                    const std::vector<ParameterExpression *> &parameters,
-                   Type *returnType, std::vector<Annotation> annotations)
+                   const Type *returnType, std::vector<Annotation> annotations)
       : Expression(sourceRange), name{name}, body{body}, parameters{parameters},
         returnType{returnType}, annotations{annotations} {}
 

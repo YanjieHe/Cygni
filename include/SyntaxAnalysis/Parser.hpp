@@ -25,7 +25,7 @@ private:
   Expressions::ExpressionFactory expressionFactory;
   Expressions::TypeFactory typeFactory;
   Expressions::NamespaceFactory namespaceFactory;
-  std::stack<Expressions::Namespace*> namespaceStack;
+  std::stack<Expressions::Namespace *> namespaceStack;
 
 public:
   Parser(std::vector<Token> tokens,
@@ -48,7 +48,13 @@ public:
                                     token.column, Look().column};
   }
 
-  Expressions::NamespaceFactory& GetNamespaceFactory() { return namespaceFactory; }
+  Expressions::NamespaceFactory &GetNamespaceFactory() {
+    return namespaceFactory;
+  }
+
+  Expressions::ExpressionFactory &GetExpressionFactory() {
+    return expressionFactory;
+  }
 
   ExpPtr Statement();
 
@@ -78,15 +84,18 @@ public:
 
   ExpPtr WhileStatement();
 
-  Expressions::VariableDeclarationExpression* VariableDeclarationStatement();
+  Expressions::VariableDeclarationExpression *VariableDeclarationStatement();
 
-  Expressions::LambdaExpression* FunctionDeclarationStatement(const std::vector<Annotation>& annotations);
+  Expressions::LambdaExpression *
+  FunctionDeclarationStatement(const std::vector<Annotation> &annotations);
+
+  Expressions::VariableDeclarationExpression *ParseGlobalVariable();
 
   std::vector<ExpPtr> ParseArguments();
 
   ExpPtr ParseArgument();
 
-  Expressions::ParameterExpression* ParseParameter();
+  Expressions::ParameterExpression *ParseParameter();
 
   TypePtr ParseType();
 

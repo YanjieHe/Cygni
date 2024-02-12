@@ -35,7 +35,8 @@ void Compile(std::string sourceFilePath, std::string targetFile) {
     Parser parser(tokens, sourceCodeFile);
     parser.ParseNamespace();
 
-    TypeChecker typeChecker(parser.GetNamespaceFactory());
+    TypeChecker typeChecker(parser.GetNamespaceFactory(),
+                            parser.GetExpressionFactory());
 
     Scope<const Type *> scope;
     typeChecker.CheckNamespace(&scope);
@@ -51,16 +52,21 @@ void Compile(std::string sourceFilePath, std::string targetFile) {
         NameInfo(LocationKind::Global_Native_Function_Count, 0));
     nameLocator.CheckNamespace(&nameInfoScope);
 
+    spdlog::info("Start compiling the program.");
+    spdlog::info("Global Variable Count: {}", nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
+    spdlog::info("Global Function Count: {}", nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
     Compiler compiler(typeChecker, nameLocator, parser.GetNamespaceFactory());
+    std::vector<flint_bytecode::GlobalVariable> globalVariables(
+        nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
     std::vector<flint_bytecode::Function> functions(
         nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
-    compiler.CompileNamespace(functions, nativeFunctions);
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions);
     std::vector<flint_bytecode::NativeLibrary> nativeLibraries =
         compiler.GetNativeLibraries();
-    flint_bytecode::ByteCodeProgram program({}, {}, functions, nativeLibraries,
-                                            nativeFunctions,
+    flint_bytecode::ByteCodeProgram program(globalVariables, {}, functions,
+                                            nativeLibraries, nativeFunctions,
                                             compiler.EntryPoint());
 
     ByteCode byteCode;
