@@ -30,13 +30,15 @@ std::unordered_map<std::u32string, TokenTag> Token::keywords = {
     {U"and", TokenTag::And},
     {U"or", TokenTag::Or},
     {U"while", TokenTag::While},
+    {U"struct", TokenTag::Structure},
     {U"module", TokenTag::Module},
     {U"package", TokenTag::Package},
     {U"import", TokenTag::Import},
     {U"require", TokenTag::Require},
     {U"rename", TokenTag::Rename},
     {U"to", TokenTag::To},
-    {U"interface", TokenTag::Interface}};
+    {U"interface", TokenTag::Interface},
+    {U"new", TokenTag::New}};
 
 std::unordered_map<std::u32string, TokenTag> Token::operators = {
     {U"+", TokenTag::Add},
@@ -62,7 +64,8 @@ std::unordered_map<std::u32string, TokenTag> Token::operators = {
     {U";", TokenTag::Semicolon},
     {U"=", TokenTag::Assign},
     {U"=>", TokenTag::GoesTo},
-    {U"@", TokenTag::At}};
+    {U"@", TokenTag::At},
+    {U"::", TokenTag::ScopeResolutionOperator}};
 
 Json Token::ToJson() const {
   return {{"line", line},

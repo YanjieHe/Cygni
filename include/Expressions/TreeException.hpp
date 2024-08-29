@@ -1,22 +1,31 @@
 #ifndef CYGNI_EXPRESSIONS_TREE_EXCEPTION_HPP
 #define CYGNI_EXPRESSIONS_TREE_EXCEPTION_HPP
 
-#include "Utility/Exception.hpp"
 #include "Expressions/Expression.hpp"
+#include "Utility/Exception.hpp"
 
-namespace Cygni {
-namespace Expressions {
 
-class TreeException : public Utility::Exception {
-private:
-  const Expression *tree;
+namespace Cygni
+{
+namespace Expressions
+{
 
-public:
-  TreeException(std::string source, int line, std::string message,
-                const Expression *tree, const std::exception *innerException)
-      : Exception(source, line, message, innerException), tree{tree} {}
+class TreeException : public Utility::Exception
+{
+  private:
+    const Expression *tree;
 
-  const Expression *Tree() const { return tree; }
+  public:
+    TreeException(std::string source, int line, std::string message, const Expression *tree,
+                  const std::exception *innerException)
+        : Exception(source, line, message, innerException), tree{tree}
+    {
+    }
+
+    const Expression *Tree() const
+    {
+        return tree;
+    }
 };
 
 }; /* namespace Expressions */

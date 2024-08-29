@@ -3,18 +3,28 @@
 
 #include <string>
 
-namespace Cygni {
-namespace LexicalAnalysis {
+namespace Cygni
+{
+namespace LexicalAnalysis
+{
 
-class SourceCodeFile {
-private:
-  std::string fileName;
+class SourceCodeFile
+{
+  private:
+    std::string fileName;
 
-public:
-  SourceCodeFile() : fileName() {}
-  SourceCodeFile(const std::string &filePath) : fileName{filePath} {}
+  public:
+    SourceCodeFile() : fileName()
+    {
+    }
+    SourceCodeFile(const std::string &filePath) : fileName{filePath}
+    {
+    }
 
-  const std::string &FileName() const { return fileName; }
+    const std::string &FileName() const
+    {
+        return fileName;
+    }
 };
 
 }; /* namespace LexicalAnalysis */
