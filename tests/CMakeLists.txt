@@ -13,6 +13,7 @@ file(GLOB TESTS
     ${PROJECT_SOURCE_DIR}/tests/Expressions/*.cpp
     ${PROJECT_SOURCE_DIR}/tests/LexicalAnalysis/*.cpp
     ${PROJECT_SOURCE_DIR}/tests/SyntaxAnalysis/*.cpp
+    ${PROJECT_SOURCE_DIR}/tests/Utility/*.cpp
     ${PROJECT_SOURCE_DIR}/tests/Visitors/*.cpp)
 
 include_directories(

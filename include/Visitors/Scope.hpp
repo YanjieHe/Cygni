@@ -1,41 +1,46 @@
 #ifndef CYGNI_VISITORS_SCOPE_HPP
 #define CYGNI_VISITORS_SCOPE_HPP
 
-#include <unordered_map>
+#include "Utility/UTF32Functions.hpp"
 #include "Visitors/ScopeException.hpp"
+#include <spdlog/spdlog.h>
+#include <unordered_map>
 
-namespace Cygni {
-namespace Visitors {
+namespace Cygni
+{
+namespace Visitors
+{
 
 template <typename TValue>
 class Scope
 {
-private:
-	Scope<TValue>* parent;
-	std::unordered_map<std::u32string, TValue> values;
+  private:
+    Scope<TValue> *parent;
+    std::unordered_map<std::u32string, TValue> values;
 
-public:
-	Scope() : parent(nullptr) {};
-	Scope(Scope<TValue>* parent) : parent(parent) {}
+  public:
+    Scope() : parent(nullptr) {};
+    Scope(Scope<TValue> *parent) : parent(parent)
+    {
+    }
 
-	void Declare(const std::u32string& name, const TValue& value);
+    void Declare(const std::u32string &name, const TValue &value);
 
-	bool Exists(const std::u32string& name) const;
+    bool Exists(const std::u32string &name) const;
 
-    TValue& Get(const std::u32string& name);
+    TValue &Get(const std::u32string &name);
 
-    const TValue& Get(const std::u32string& name) const;
+    const TValue &Get(const std::u32string &name) const;
 };
 
-
 template <typename TValue>
-void Scope<TValue>::Declare(const std::u32string& name, const TValue& value)
+void Scope<TValue>::Declare(const std::u32string &name, const TValue &value)
 {
     values[name] = value;
 }
 
 template <typename TValue>
-bool Scope<TValue>::Exists(const std::u32string& name) const
+bool Scope<TValue>::Exists(const std::u32string &name) const
 {
     if (values.find(name) != values.end())
     {
@@ -55,7 +60,7 @@ bool Scope<TValue>::Exists(const std::u32string& name) const
 }
 
 template <typename TValue>
-TValue& Scope<TValue>::Get(const std::u32string& name)
+TValue &Scope<TValue>::Get(const std::u32string &name)
 {
     if (values.find(name) != values.end())
     {
@@ -69,13 +74,15 @@ TValue& Scope<TValue>::Get(const std::u32string& name)
         }
         else
         {
+            spdlog::error("Undefined symbol: '{}'.", Utility::UTF32ToUTF8(name));
+
             throw ScopeException(__FILE__, __LINE__, "Undefined symbol.", nullptr, name);
         }
     }
 }
 
 template <typename TValue>
-const TValue& Scope<TValue>::Get(const std::u32string& name) const
+const TValue &Scope<TValue>::Get(const std::u32string &name) const
 {
     if (values.find(name) != values.end())
     {
@@ -89,6 +96,8 @@ const TValue& Scope<TValue>::Get(const std::u32string& name) const
         }
         else
         {
+            spdlog::error("Undefined symbol: '{}'.", Utility::UTF32ToUTF8(name));
+
             throw ScopeException(__FILE__, __LINE__, "Undefined symbol.", nullptr, name);
         }
     }

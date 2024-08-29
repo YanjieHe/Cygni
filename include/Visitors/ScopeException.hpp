@@ -2,26 +2,28 @@
 #define CYGNI_VISITORS_SCOPE_EXCEPTION_HPP
 
 #include "Utility/Exception.hpp"
-#include <spdlog/spdlog.h>
-#include "Utility/UTF32Functions.hpp"
 
-namespace Cygni {
-namespace Visitors {
+namespace Cygni
+{
+namespace Visitors
+{
 
-class ScopeException : public Utility::Exception {
-private:
-  std::u32string name;
+class ScopeException : public Utility::Exception
+{
+  private:
+    std::u32string name;
 
-public:
-  ScopeException(std::string source, int line, const std::string &message,
-                 const std::exception *innerException,
-                 const std::u32string name)
-      : Exception(source, line, message, innerException), name{name} {
-    spdlog::error("Scope Exception: " + message + ", Name: {}",
-                  Utility::UTF32ToUTF8(name));
-  }
+  public:
+    ScopeException(std::string source, int line, const std::string &message, const std::exception *innerException,
+                   const std::u32string name)
+        : Exception(source, line, message, innerException), name{name}
+    {
+    }
 
-  const std::u32string &Name() const { return name; }
+    const std::u32string &Name() const
+    {
+        return name;
+    }
 };
 
 }; /* namespace Visitors */

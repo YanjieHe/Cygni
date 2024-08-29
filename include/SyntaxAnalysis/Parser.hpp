@@ -1,15 +1,18 @@
 #ifndef CYGNI_EXPRESSIONS_PARSER_HPP
 #define CYGNI_EXPRESSIONS_PARSER_HPP
 
-#include "Expressions/TreeException.hpp"
 #include "Expressions/Expression.hpp"
-#include "Expressions/SourceRange.hpp"
-#include "LexicalAnalysis/Token.hpp"
 #include "Expressions/Namespace.hpp"
+#include "Expressions/SourceRange.hpp"
+#include "Expressions/TreeException.hpp"
+#include "LexicalAnalysis/Token.hpp"
 #include <stack>
 
-namespace Cygni {
-namespace SyntaxAnalysis {
+
+namespace Cygni
+{
+namespace SyntaxAnalysis
+{
 
 using LexicalAnalysis::Token;
 using namespace Cygni::Expressions;
@@ -17,95 +20,114 @@ using namespace Cygni::Expressions;
 using ExpPtr = Expressions::Expression *;
 using TypePtr = Expressions::Type *;
 
-class Parser {
-private:
-  std::vector<Token> tokens;
-  std::shared_ptr<LexicalAnalysis::SourceCodeFile> document;
-  int offset;
-  Expressions::ExpressionFactory expressionFactory;
-  Expressions::TypeFactory typeFactory;
-  Expressions::NamespaceFactory namespaceFactory;
-  std::stack<Expressions::Namespace *> namespaceStack;
+class Parser
+{
+  private:
+    std::vector<Token> tokens;
+    std::shared_ptr<LexicalAnalysis::SourceCodeFile> document;
+    int offset;
+    Expressions::ExpressionFactory expressionFactory;
+    Expressions::TypeFactory typeFactory;
+    Expressions::NamespaceFactory namespaceFactory;
+    std::stack<Expressions::Namespace *> namespaceStack;
 
-public:
-  Parser(std::vector<Token> tokens,
-         std::shared_ptr<LexicalAnalysis::SourceCodeFile> document);
+  public:
+    Parser(std::vector<Token> tokens, std::shared_ptr<LexicalAnalysis::SourceCodeFile> document);
 
-  inline bool IsEof() const {
-    return Look().tag == LexicalAnalysis::TokenTag::Eof;
-  }
+    inline bool IsEof() const
+    {
+        return Look().tag == LexicalAnalysis::TokenTag::Eof;
+    }
 
-  inline const Token &Look() const { return tokens[offset]; }
+    inline const Token &Look() const
+    {
+        return tokens[offset];
+    }
 
-  inline void Advance() { offset++; }
+    inline void Advance()
+    {
+        offset++;
+    }
 
-  inline void Back() { offset--; }
+    inline void Back()
+    {
+        offset--;
+    }
 
-  const Token &Match(LexicalAnalysis::TokenTag tag);
+    const Token &Match(LexicalAnalysis::TokenTag tag);
 
-  inline Expressions::SourceRange Pos(const Token &token) const {
-    return Expressions::SourceRange{document, token.line, Look().line,
-                                    token.column, Look().column};
-  }
+    inline Expressions::SourceRange Pos(const Token &token) const
+    {
+        return Expressions::SourceRange{document, token.line, Look().line, token.column, Look().column};
+    }
 
-  Expressions::NamespaceFactory &GetNamespaceFactory() {
-    return namespaceFactory;
-  }
+    Expressions::NamespaceFactory &GetNamespaceFactory()
+    {
+        return namespaceFactory;
+    }
 
-  Expressions::ExpressionFactory &GetExpressionFactory() {
-    return expressionFactory;
-  }
+    Expressions::ExpressionFactory &GetExpressionFactory()
+    {
+        return expressionFactory;
+    }
 
-  ExpPtr Statement();
+    ExpPtr Statement();
 
-  ExpPtr ParseAssign();
+    ExpPtr ParseAssign();
 
-  ExpPtr ParseOr();
+    ExpPtr ParseOr();
 
-  ExpPtr ParseAnd();
+    ExpPtr ParseAnd();
 
-  ExpPtr ParseEquality();
+    ExpPtr ParseEquality();
 
-  ExpPtr ParseRelation();
+    ExpPtr ParseRelation();
 
-  ExpPtr ParseExpr();
+    ExpPtr ParseExpr();
 
-  ExpPtr ParseTerm();
+    ExpPtr ParseTerm();
 
-  ExpPtr ParseUnary();
+    ExpPtr ParseUnary();
 
-  ExpPtr ParsePostfix();
+    ExpPtr ParsePostfix();
 
-  ExpPtr ParseFactor();
+    ExpPtr ParseFactor();
 
-  ExpPtr ParseBlock();
+    ExpPtr ParseBlock();
 
-  ExpPtr IfStatement();
+    ExpPtr IfStatement();
 
-  ExpPtr WhileStatement();
+    ExpPtr WhileStatement();
 
-  Expressions::VariableDeclarationExpression *VariableDeclarationStatement();
+    Expressions::VariableDeclarationExpression *VariableDeclarationStatement();
 
-  Expressions::LambdaExpression *
-  FunctionDeclarationStatement(const std::vector<Annotation> &annotations);
+    Expressions::LambdaExpression *FunctionDeclarationStatement(const std::vector<Annotation> &annotations);
 
-  Expressions::VariableDeclarationExpression *ParseGlobalVariable();
+    Expressions::VariableDeclarationExpression *ParseGlobalVariable();
 
-  std::vector<ExpPtr> ParseArguments();
+    Expressions::StructureExpression *ParseStructureDefinition();
 
-  ExpPtr ParseArgument();
+    std::vector<ExpPtr> ParseArguments();
 
-  Expressions::ParameterExpression *ParseParameter();
+    ExpPtr ParseArgument();
 
-  TypePtr ParseType();
+    Expressions::ParameterExpression *ParseParameter();
 
-  void ParseNamespace();
+    TypePtr ParseType();
 
-  AnnotationArgument ParseAnnotationArgument();
+    StructureType *ParseStructureType();
 
-  Annotation ParseAnnotation();
+    void ParseNamespace();
 
-  std::vector<Annotation> ParseAnnotations();
+    AnnotationArgument ParseAnnotationArgument();
+
+    Annotation ParseAnnotation();
+
+    std::vector<Annotation> ParseAnnotations();
+
+    Expressions::NewExpression *ParseNewExpression();
+
+    std::vector<std::u32string> ParseNamespacePath();
 };
 
 }; /* namespace SyntaxAnalysis */
