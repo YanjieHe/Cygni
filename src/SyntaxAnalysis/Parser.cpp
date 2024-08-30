@@ -257,15 +257,13 @@ ExpPtr Parser::ParsePostfix()
             if (x->NodeType() == ExpressionType::Parameter)
             {
                 auto parameter = static_cast<ParameterExpression *>(x);
-                std::vector<std::u32string> prefix;
-                std::u32string name = parameter->Name();
+                std::vector<std::u32string> qualifiedName = parameter->QualifiedName();
                 while (Look().tag == TokenTag::ScopeResolutionOperator)
                 {
                     Match(TokenTag::ScopeResolutionOperator);
-                    prefix.push_back(name);
-                    name = Match(TokenTag::Identifier).text;
+                    qualifiedName.push_back(Match(TokenTag::Identifier).text);
                 }
-                x = expressionFactory.Create<ParameterExpression>(Pos(start), prefix, name,
+                x = expressionFactory.Create<ParameterExpression>(Pos(start), qualifiedName,
                                                                   TypeFactory::CreateBasicType(TypeCode::Unknown));
             }
             else
@@ -358,7 +356,7 @@ ExpPtr Parser::ParseFactor()
         std::u32string name = Look().text;
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ParameterExpression>(Pos(start), name,
+        return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name},
                                                              TypeFactory::CreateBasicType(TypeCode::Unknown));
     }
     else if (Look().tag == TokenTag::New)
@@ -368,12 +366,10 @@ ExpPtr Parser::ParseFactor()
     }
     else
     {
-        auto sv = magic_enum::enum_name(Look().tag);
-        std::string lookTagStr(sv.begin(), sv.end());
         throw ParserException(
             __FILE__, __LINE__,
             SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
-            Utility::UTF32ToUTF8(Format(U"Unexpected token type: '{}'.", lookTagStr)), nullptr);
+            Utility::UTF32ToUTF8(Format(U"Unexpected token type: '{}'.", Utility::EnumToString(Look().tag))), nullptr);
     }
 }
 
@@ -582,7 +578,7 @@ Expressions::ParameterExpression *Parser::ParseParameter()
     Match(TokenTag::Colon);
     TypePtr type = ParseType();
 
-    return expressionFactory.Create<ParameterExpression>(Pos(start), name, type);
+    return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, type);
 }
 
 TypePtr Parser::ParseType()
@@ -690,14 +686,11 @@ void Parser::ParseNamespace()
                 break;
             }
             default: {
-                auto sv = magic_enum::enum_name<TokenTag>(Look().tag);
-                std::string tagName(sv.begin(), sv.end());
                 throw ParserException(
                     __FILE__, __LINE__,
                     SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
-                    "Unexpected token '" + tagName +
-                        "' encountered while parsing "
-                        "the module. Expected 'var' or 'func'.",
+                    "Unexpected token '" + Utility::EnumToString(Look().tag) +
+                        "' encountered while parsing the module. Expected 'var' or 'func'.",
                     nullptr);
             }
             }

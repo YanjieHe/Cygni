@@ -152,18 +152,12 @@ class UnaryExpression : public Expression
 class ParameterExpression : public Expression
 {
   private:
-    std::vector<std::u32string> prefix;
-    std::u32string name;
+    std::vector<std::u32string> qualifiedName;
     Type *type;
 
   public:
-    ParameterExpression(SourceRange sourceRange, const std::u32string &name, Type *type)
-        : Expression(sourceRange), name(name), type{type}
-    {
-    }
-    ParameterExpression(SourceRange sourceRange, std::vector<std::u32string> prefix, const std::u32string &name,
-                        Type *type)
-        : Expression(sourceRange), name(name), type{type}
+    ParameterExpression(SourceRange sourceRange, std::vector<std::u32string> qualifiedName, Type *type)
+        : Expression(sourceRange), qualifiedName(qualifiedName), type{type}
     {
     }
 
@@ -172,14 +166,14 @@ class ParameterExpression : public Expression
         return ExpressionType::Parameter;
     }
 
-    const std::vector<std::u32string> &Prefix() const
+    const std::vector<std::u32string> &QualifiedName() const
     {
-        return prefix;
+        return qualifiedName;
     }
 
     const std::u32string &Name() const
     {
-        return name;
+        return qualifiedName.back();
     }
 
     const Type *GetType() const
@@ -316,7 +310,7 @@ class AnnotationArgument
 
   public:
     AnnotationArgument() = default;
-    
+
     AnnotationArgument(std::u32string name, std::any value) : name{name}, value{value}
     {
     }
