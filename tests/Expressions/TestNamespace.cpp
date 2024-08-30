@@ -59,6 +59,56 @@ TEST_CASE("namespace Universe::Galaxies", "[Namespace]")
     REQUIRE(namespaceFactory.Search(root, {U"Universe", U"Particles"}) != nullptr);
 }
 
+TEST_CASE("namespace search a global variable", "[Namespace]")
+{
+    NamespaceFactory namespaceFactory;
+
+    Namespace *root = namespaceFactory.Create(nullptr, U"");
+
+    namespaceFactory.Insert(root, {U"Physics"});
+    namespaceFactory.Insert(root, {U"Physics", U"Constants"});
+
+    Namespace *namespaceConstants = namespaceFactory.Search(root, {U"Physics", U"Constants"});
+    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), "299792458", TypeCode::Float64);
+    Float64Type float64Type;
+    VariableDeclarationExpression varDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"SpeedOfLight", &float64Type,
+                                          &constant);
+    namespaceConstants->GlobalVariables().AddItem(U"SpeedOfLight", &varDecl);
+    VariableDeclarationExpression *speedOfLightVar =
+        namespaceFactory.SearchGlobalVariable(root, {U"Physics", U"Constants", U"SpeedOfLight"});
+    REQUIRE(speedOfLightVar != nullptr);
+    REQUIRE(&(varDecl) == speedOfLightVar);
+    REQUIRE(speedOfLightVar->GetType()->GetTypeCode() == TypeCode::Float64);
+
+    VariableDeclarationExpression *nonExistentVar =
+        namespaceFactory.SearchGlobalVariable(root, {U"Global", U"PlanckConstant"});
+    REQUIRE(nonExistentVar == nullptr);
+}
+
+TEST_CASE("namespace search a function", "[Namespace]")
+{
+    NamespaceFactory namespaceFactory;
+
+    Namespace *root = namespaceFactory.Create(nullptr, U"");
+
+    namespaceFactory.Insert(root, {U"A", U"B", U"C"});
+
+    Namespace *ns = namespaceFactory.Search(root, {U"A", U"B", U"C"});
+    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), "42", TypeCode::Int32);
+    Int32Type int32Type;
+    LambdaExpression funcDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"TargetFunction", &constant, {}, &int32Type,
+                              {});
+    ns->Functions().AddItem(U"TargetFunction", &funcDecl);
+    LambdaExpression *targetFunction = namespaceFactory.SearchFunction(root, {U"A", U"B", U"C", U"TargetFunction"});
+    REQUIRE(targetFunction != nullptr);
+    REQUIRE(&(funcDecl) == targetFunction);
+
+    LambdaExpression *nonExistentFunction = namespaceFactory.SearchFunction(root, {U"A", U"B", U"NonExistentFunction"});
+    REQUIRE(nonExistentFunction == nullptr);
+}
+
 TEST_CASE("namespace search a structure", "[Namespace]")
 {
     NamespaceFactory namespaceFactory;

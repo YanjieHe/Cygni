@@ -26,6 +26,21 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
         const Type *right = Visit(node->Right(), scope);
         if (node->Left()->NodeType() == ExpressionType::Parameter)
         {
+            /* TODO: check if the variable is modifiable. */
+            const Type *left = Visit(node->Left(), scope);
+
+            if (TypeFactory::AreTypesEqual(left, right))
+            {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+            }
+        }
+        else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
+        {
+            /* TODO: check if the field is modifiable. */
             const Type *left = Visit(node->Left(), scope);
 
             if (TypeFactory::AreTypesEqual(left, right))
@@ -39,7 +54,13 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
         }
         else
         {
-            throw TreeException(__FILE__, __LINE__, "type checking not supported error.", node, nullptr);
+            spdlog::error("Unsupported left side in assignment. Expected a parameter, but got: {}",
+                          Utility::EnumToString(node->Left()->NodeType()));
+
+            throw TreeException(__FILE__, __LINE__,
+                                "Unsupported left side in assignment. Expected a parameter, but got: " +
+                                    Utility::EnumToString(node->Left()->NodeType()),
+                                node, nullptr);
         }
     }
     else
@@ -155,7 +176,7 @@ const Type *TypeChecker::VisitConstant(const ConstantExpression *node, Scope<con
 
 const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<const Type *> *scope)
 {
-    if (node->Prefix().empty())
+    if (node->QualifiedName().size() == 1)
     {
         if (scope->Exists(node->Name()))
         {
@@ -165,37 +186,37 @@ const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<c
         }
         else
         {
-            throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."), node,
-                                nullptr);
+            spdlog::error("'{}' is not defined.", Utility::UTF32ToUTF8(node->Name()));
+
+            throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' is not defined."),
+                                node, nullptr);
         }
     }
     else
     {
-        Namespace *ns = namespaceFactory.Search(namespaceFactory.GetRoot(), node->Prefix());
-        if (ns)
+        Namespace *top = namespaceStack.top();
+        VariableDeclarationExpression *varDecl = namespaceFactory.SearchGlobalVariable(top, node->QualifiedName());
+        if (varDecl != nullptr)
         {
-            if (ns->GlobalVariables().ContainsKey(node->Name()))
-            {
-                const Type *type = ns->GlobalVariables().GetItemByKey(node->Name())->GetType();
+            const Type *type = varDecl->GetType();
 
-                return Register(node, type);
-            }
-            else if (ns->Functions().ContainsKey(node->Name()))
-            {
-                CallableType *callableType = ns->Functions().GetItemByKey(node->Name())->GetCallableType(Types);
+            return Register(node, type);
+        }
+        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(top, node->QualifiedName());
+        if (funcDecl != nullptr)
+        {
+            CallableType *callableType = funcDecl->GetCallableType(Types);
 
-                return Register(node, static_cast<const Type *>(callableType));
-            }
-            else
-            {
-                throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."),
-                                    node, nullptr);
-            }
+            return Register(node, static_cast<const Type *>(callableType));
         }
         else
         {
+            spdlog::error("'{}' is not defined.",
+                          Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", node->QualifiedName())));
+
             throw TreeException(__FILE__, __LINE__,
-                                Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined. The module is missing."),
+                                Utility::UTF32ToUTF8(U"'" + Utility::StringUtils::Join(U"::", node->QualifiedName()) +
+                                                     U"' is not defined."),
                                 node, nullptr);
         }
     }
@@ -224,10 +245,8 @@ const Type *TypeChecker::VisitConditional(const ConditionalExpression *node, Sco
     else
     {
         throw TreeException(__FILE__, __LINE__,
-                            "The type of condition of the "
-                            "conditional expression must be a "
-                            "boolean type.",
-                            node, nullptr);
+                            "The type of condition of the conditional expression must be a boolean type.", node,
+                            nullptr);
     }
 }
 

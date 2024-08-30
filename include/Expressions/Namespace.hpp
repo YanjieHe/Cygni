@@ -96,9 +96,14 @@ class NamespaceFactory
 
     void Insert(Namespace *predecessor, const std::vector<std::u32string> &path);
     Namespace *Search(Namespace *predecessor, const std::vector<std::u32string> &path);
+    VariableDeclarationExpression *SearchGlobalVariable(Namespace *current, const std::vector<std::u32string> &path);
+    LambdaExpression *SearchFunction(Namespace *current, const std::vector<std::u32string> &path);
     StructureExpression *SearchStructure(Namespace *current, const std::vector<std::u32string> &path);
 
   private:
+    VariableDeclarationExpression *SearchGlobalVariableRecursively(Namespace *current,
+                                                                   const std::vector<std::u32string> &path, int i);
+    LambdaExpression *SearchFunctionRecursively(Namespace *current, const std::vector<std::u32string> &path, int i);
     StructureExpression *SearchStructureRecursively(Namespace *current, const std::vector<std::u32string> &path, int i);
 };
 

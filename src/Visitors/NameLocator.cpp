@@ -1,4 +1,6 @@
 #include "Visitors/NameLocator.hpp"
+#include "Utility/StringUtils.hpp"
+#include <spdlog/spdlog.h>
 
 namespace Cygni
 {
@@ -27,44 +29,57 @@ void NameLocator::VisitConstant(const ConstantExpression *node, Scope<NameInfo> 
 }
 void NameLocator::VisitParameter(const ParameterExpression *node, Scope<NameInfo> *scope)
 {
-    if (node->Prefix().empty())
+    if (node->QualifiedName().size() == 1)
     {
         NameInfo nameInfo = scope->Get(node->Name());
         Register(node, nameInfo);
     }
     else
     {
-        Namespace *ns = namespaceFactory.Search(namespaceFactory.GetRoot(), node->Prefix());
-        if (ns)
+        VariableDeclarationExpression *varDecl =
+            namespaceFactory.SearchGlobalVariable(namespaceFactory.GetRoot(), node->QualifiedName());
+        if (varDecl != nullptr)
         {
-            if (ns->GlobalVariables().ContainsKey(node->Name()))
-            {
-                const NameInfo &nameInfo =
-                    GetNameInfo(ns->GlobalVariables().GetItemByKey(node->Name()), LocationKind::GlobalVariable);
+            const NameInfo &nameInfo = GetNameInfo(varDecl, LocationKind::GlobalVariable);
 
-                return Register(node, nameInfo);
+            return Register(node, nameInfo);
+        }
+        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(namespaceFactory.GetRoot(), node->QualifiedName());
+        if (funcDecl != nullptr)
+        {
+            if (ExistsNameInfo(funcDecl, LocationKind::Function))
+            {
+                const NameInfo &nameInfo = GetNameInfo(funcDecl, LocationKind::Function);
+
+                Register(node, nameInfo);
             }
-            else if (ns->Functions().ContainsKey(node->Name()))
+            else if (ExistsNameInfo(funcDecl, LocationKind::NativeFunction))
             {
-                const NameInfo &nameInfo =
-                    GetNameInfo(ns->Functions().GetItemByKey(node->Name()), LocationKind::Function);
+                const NameInfo &nameInfo = GetNameInfo(funcDecl, LocationKind::NativeFunction);
 
-                return Register(node, nameInfo);
+                Register(node, nameInfo);
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' not defined."),
+                spdlog::error("'{}' is not defined.",
+                              Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", node->QualifiedName())));
+
+                throw TreeException(__FILE__, __LINE__,
+                                    Utility::UTF32ToUTF8(U"'" +
+                                                         Utility::StringUtils::Join(U"::", node->QualifiedName()) +
+                                                         U"' is not defined."),
                                     node, nullptr);
             }
         }
         else
         {
-            spdlog::error("Unable to locate the namespace of the parameter '{}' while searching for it.",
-                          Utility::UTF32ToUTF8(node->Name()));
+            spdlog::error("'{}' is not defined.",
+                          Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", node->QualifiedName())));
 
             throw TreeException(__FILE__, __LINE__,
-                                "Unable to locate the namespace of the parameter while searching for it.", node,
-                                nullptr);
+                                Utility::UTF32ToUTF8(U"'" + Utility::StringUtils::Join(U"::", node->QualifiedName()) +
+                                                     U"' is not defined."),
+                                node, nullptr);
         }
     }
 }
