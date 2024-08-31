@@ -35,7 +35,7 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__, "parameter assignment type mismatch error.", node, nullptr);
             }
         }
         else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
@@ -49,7 +49,7 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__, "member assignment type mismatch error.", node, nullptr);
             }
         }
         else
@@ -91,7 +91,7 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__, "arithmetic operation type mismatch error.", node, nullptr);
             }
         }
         case ExpressionType::GreaterThan:
@@ -124,7 +124,9 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+                spdlog::error("left: {}, right: {}", Utility::EnumToString(left->GetTypeCode()),
+                              Utility::EnumToString(right->GetTypeCode()));
+                throw TreeException(__FILE__, __LINE__, "comparison type mismatch error.", node, nullptr);
             }
         }
         case ExpressionType::Equal:
@@ -159,8 +161,23 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__, "equality type mismatch error.", node, nullptr);
             }
+        }
+        case ExpressionType::And:
+        case ExpressionType::Or: {
+            if (left->GetTypeCode() == TypeCode::Boolean && right->GetTypeCode() == TypeCode::Boolean)
+            {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Boolean));
+            }
+            else
+            {
+                spdlog::info("The operands of logical operations (and, or) must be boolean type.");
+                throw TreeException(__FILE__, __LINE__,
+                                    "The operands of logical operations (and, or) must be boolean type.", node,
+                                    nullptr);
+            }
+            break;
         }
         default: {
             throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
@@ -296,7 +313,7 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
                     return Register(node, node->GetType());
                 }
             }
-            throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__, "convert type mismatch error.", node, nullptr);
         }
     }
     default: {

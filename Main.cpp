@@ -1,6 +1,7 @@
 #include "CLI/CLI11.hpp"
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
+#include "SyntaxAnalysis/ParserException.hpp"
 #include "Utility/UTF32Functions.hpp"
 #include "Visitors/Compiler.hpp"
 #include "Visitors/ExpressionJsonSerializer.hpp"
@@ -80,10 +81,19 @@ void TryCompile(std::string sourceFilePath, std::string targetFilePath)
     {
         spdlog::error(UTF32ToUTF8(ex.FormattedErrorMessage()));
     }
+    catch (ParserException &ex)
+    {
+        SourceRange sourceRange = ex.GetSourceRange();
+        spdlog::error("{}:{}:{}: {}", sourceRange.CodeFile()->FileName(), sourceRange.StartLine() + 1,
+                      sourceRange.StartColumn() + 1, ex.Message());
+    }
     catch (TreeException &ex)
     {
-        spdlog::error(ex.Message());
-        spdlog::error(nlohmann::to_string(ExpressionJsonSerializer::ExpressionToJson(ex.Tree())));
+        SourceRange sourceRange = ex.GetSourceRange();
+        spdlog::error("Compiler source code file: {}, line: {}", ex.Source(), ex.Line());
+        spdlog::error("{}:{}:{}: {}", sourceRange.CodeFile()->FileName(), sourceRange.StartLine() + 1,
+                      sourceRange.StartColumn() + 1, ex.Message());
+        // spdlog::error(nlohmann::to_string(ExpressionJsonSerializer::ExpressionToJson(ex.Tree())));
     }
     catch (ScopeException &ex)
     {

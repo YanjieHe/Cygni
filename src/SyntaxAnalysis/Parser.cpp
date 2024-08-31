@@ -103,14 +103,30 @@ ExpPtr Parser::ParseOr()
 ExpPtr Parser::ParseAnd()
 {
     const Token &start = Look();
-    auto x = ParseEquality();
+    auto x = ParseNot();
     while (Look().tag == TokenTag::And)
     {
         Match(TokenTag::And);
-        auto y = ParseEquality();
+        auto y = ParseNot();
         x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::And, x, y);
     }
     return x;
+}
+
+ExpPtr Parser::ParseNot()
+{
+    const Token &start = Look();
+    if (Look().tag == TokenTag::Not)
+    {
+        Match(TokenTag::Not);
+        auto x = ParseEquality();
+        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x,
+                                                         TypeFactory::CreateBasicType(TypeCode::Unknown));
+    }
+    else
+    {
+        return ParseEquality();
+    }
 }
 
 ExpPtr Parser::ParseEquality()
@@ -343,13 +359,13 @@ ExpPtr Parser::ParseFactor()
     {
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), U"true", TypeCode::Boolean);
+        return expressionFactory.Create<ConstantExpression>(Pos(start), true, TypeCode::Boolean);
     }
     else if (Look().tag == TokenTag::False)
     {
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), U"false", TypeCode::Boolean);
+        return expressionFactory.Create<ConstantExpression>(Pos(start), false, TypeCode::Boolean);
     }
     else if (Look().tag == TokenTag::Identifier)
     {
