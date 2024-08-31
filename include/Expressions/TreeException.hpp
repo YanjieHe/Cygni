@@ -4,7 +4,6 @@
 #include "Expressions/Expression.hpp"
 #include "Utility/Exception.hpp"
 
-
 namespace Cygni
 {
 namespace Expressions
@@ -13,18 +12,18 @@ namespace Expressions
 class TreeException : public Utility::Exception
 {
   private:
-    const Expression *tree;
+    SourceRange sourceRange;
 
   public:
     TreeException(std::string source, int line, std::string message, const Expression *tree,
                   const std::exception *innerException)
-        : Exception(source, line, message, innerException), tree{tree}
+        : Exception(source, line, message, innerException), sourceRange{tree->GetSourceRange()}
     {
     }
 
-    const Expression *Tree() const
+    const SourceRange &GetSourceRange() const
     {
-        return tree;
+        return sourceRange;
     }
 };
 

@@ -26,6 +26,14 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
     {
         CompileAssignment(node, byteCode, constantPool);
     }
+    else if (node->NodeType() == ExpressionType::And)
+    {
+        CompileLogicalAnd(node, byteCode, constantPool);
+    }
+    else if (node->NodeType() == ExpressionType::Or)
+    {
+        CompileLogicalOr(node, byteCode, constantPool);
+    }
     else
     {
         Visit(node->Left(), byteCode, constantPool);
@@ -203,19 +211,49 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
             }
             break;
         }
-        case TypeCode::Boolean:
-        case TypeCode::Char: {
-            if (node->NodeType() == ExpressionType::Equal)
+        case TypeCode::Boolean: {
+            switch (node->NodeType())
             {
+            case ExpressionType::Equal:
                 byteCode.AddOp(OpCode::EQ_I32);
-            }
-            else if (node->NodeType() == ExpressionType::NotEqual)
-            {
+                break;
+            case ExpressionType::NotEqual:
                 byteCode.AddOp(OpCode::NE_I32);
+                break;
+            default:
+                spdlog::error("Unsupported binary expression type for boolean type operands.");
+
+                throw TreeException(__FILE__, __LINE__, "Unsupported binary expression type for boolean type operands.",
+                                    node, nullptr);
             }
-            else
+        }
+        case TypeCode::Char: {
+            switch (node->NodeType())
             {
-                throw std::runtime_error("Unsupported binary expression type");
+            case ExpressionType::GreaterThan:
+                byteCode.AddOp(OpCode::GT_I32);
+                break;
+            case ExpressionType::GreaterThanOrEqual:
+                byteCode.AddOp(OpCode::GE_I32);
+                break;
+            case ExpressionType::LessThan:
+                byteCode.AddOp(OpCode::LT_I32);
+                break;
+            case ExpressionType::LessThanOrEqual:
+                byteCode.AddOp(OpCode::LE_I32);
+                break;
+            case ExpressionType::Equal:
+                byteCode.AddOp(OpCode::EQ_I32);
+                break;
+            case ExpressionType::NotEqual:
+                byteCode.AddOp(OpCode::NE_I32);
+                break;
+            default: {
+                spdlog::error("Unsupported binary expression type for character type operands.");
+
+                throw TreeException(__FILE__, __LINE__,
+                                    "Unsupported binary expression type for character type operands.", node, nullptr);
+            }
             }
             break;
         }
@@ -231,9 +269,8 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
 {
     if (node->NodeType() == ExpressionType::Not && typeChecker.GetType(node)->GetTypeCode() == TypeCode::Boolean)
     {
-        throw std::runtime_error("Unsupported unary expression type");
-        // Visit(node->Operand(), byteCode, constantPool);
-        // byteCode.AddOp(OpCode::BIT_NOT_I32);
+        Visit(node->Operand(), byteCode, constantPool);
+        byteCode.AddOp(OpCode::LOGICAL_NOT);
     }
     else if (node->NodeType() == ExpressionType::Halt)
     {
@@ -246,11 +283,13 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
         switch (typeChecker.GetType(node->Operand())->GetTypeCode())
         {
         case TypeCode::Boolean:
+        case TypeCode::Char:
         case TypeCode::Int32: {
             switch (node->GetType()->GetTypeCode())
             {
-            case TypeCode::Int32:
-            case TypeCode::Boolean: {
+            case TypeCode::Boolean:
+            case TypeCode::Char:
+            case TypeCode::Int32: {
                 break;
             }
             case TypeCode::Int64: {
@@ -1257,5 +1296,55 @@ Byte Compiler::AllocateConstant(std::vector<flint_bytecode::Constant> &constantP
     }
 }
 
+void Compiler::CompileLogicalAnd(const BinaryExpression *node, ByteCode &byteCode,
+                                 std::vector<flint_bytecode::Constant> &constantPool)
+{
+    Visit(node->Left(), byteCode, constantPool);
+    byteCode.AddOp(OpCode::JUMP_IF_FALSE);
+    int32_t location1 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.Extend(sizeof(int16_t));
+
+    Visit(node->Right(), byteCode, constantPool);
+    byteCode.AddOp(OpCode::JUMP);
+    int32_t location2 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.Extend(sizeof(int16_t));
+
+    int32_t location3 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.AddOp(OpCode::PUSH_I32_0);
+    int32_t location4 = static_cast<int32_t>(byteCode.GetBytes().size());
+
+    spdlog::info("logical and: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
+                 location3, location4);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(location3 - (location1 + sizeof(int16_t))), true,
+                                byteCode.GetBytes().begin() + location1);
+
+    bit_converter::i16_to_bytes(static_cast<int16_t>(location4 - (location2 + sizeof(int16_t))), true,
+                                byteCode.GetBytes().begin() + location2);
+}
+void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
+                                          std::vector<flint_bytecode::Constant> &constantPool)
+{
+    Visit(node->Left(), byteCode, constantPool);
+    byteCode.AddOp(OpCode::JUMP_IF_TRUE);
+    int32_t location1 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.Extend(sizeof(int16_t));
+
+    Visit(node->Right(), byteCode, constantPool);
+    byteCode.AddOp(OpCode::JUMP);
+    int32_t location2 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.Extend(sizeof(int16_t));
+
+    int32_t location3 = static_cast<int32_t>(byteCode.GetBytes().size());
+    byteCode.AddOp(OpCode::PUSH_I32_1);
+    int32_t location4 = static_cast<int32_t>(byteCode.GetBytes().size());
+
+    spdlog::info("logical or: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
+                 location3, location4);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(location3 - (location1 + sizeof(int16_t))), true,
+                                byteCode.GetBytes().begin() + location1);
+
+    bit_converter::i16_to_bytes(static_cast<int16_t>(location4 - (location2 + sizeof(int16_t))), true,
+                                byteCode.GetBytes().begin() + location2);
+}
 }; /* namespace Visitors */
 }; /* namespace Cygni */

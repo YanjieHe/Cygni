@@ -79,6 +79,8 @@ class Parser
 
     ExpPtr ParseAnd();
 
+    ExpPtr ParseNot();
+
     ExpPtr ParseEquality();
 
     ExpPtr ParseRelation();

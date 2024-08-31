@@ -82,6 +82,10 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
     int EntryPoint() const;
     flint_bytecode::Byte AllocateConstant(std::vector<flint_bytecode::Constant> &constantPool,
                                           flint_bytecode::ConstantKind constantKind, std::any value);
+    void CompileLogicalAnd(const BinaryExpression *node, ByteCode &byteCode,
+                           std::vector<flint_bytecode::Constant> &constantPool);
+    void CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
+                           std::vector<flint_bytecode::Constant> &constantPool);
 };
 
 }; /* namespace Visitors */
