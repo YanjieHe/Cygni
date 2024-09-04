@@ -540,13 +540,14 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
             break;
         }
         case TypeCode::String:
-        case TypeCode::Structure: {
+        case TypeCode::Structure:
+        case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_LOCAL_OBJECT);
             byteCode.AddByte(nameInfo.Number());
             break;
         }
         default: {
-            throw std::runtime_error("Unsupported parameter expression type");
+            throw std::runtime_error("Unsupported function variable parameter expression type");
         }
         }
     }
@@ -581,15 +582,27 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
             break;
         }
         case TypeCode::String:
-        case TypeCode::Structure: {
+        case TypeCode::Structure:
+        case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_GLOBAL_OBJECT);
             byteCode.AddByte(constantPoolIndex);
             break;
         }
         default: {
-            throw std::runtime_error("Unsupported parameter expression type");
+            throw std::runtime_error("Unsupported global variable parameter expression type");
         }
         }
+    }
+    else if (nameLocator.ExistsNameInfo(node, LocationKind::Function))
+    {
+        spdlog::info("Pass the function '{}' as a reference.", Utility::UTF32ToUTF8(node->Name()));
+        const NameInfo &nameInfo = nameLocator.GetNameInfo(node, LocationKind::Function);
+        Byte constantPoolIndex = static_cast<Byte>(constantPool.size());
+        constantPool.push_back(flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION,
+                                                        static_cast<int32_t>(nameInfo.Number())));
+        byteCode.AddOp(OpCode::PUSH_NULL);
+        byteCode.AddOp(OpCode::NEW_CLOSURE);
+        byteCode.AddByte(constantPoolIndex);
     }
     else
     {
@@ -658,9 +671,15 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
             constantPool.push_back(flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION,
                                                             nameInfo.Number()));
         }
+        else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
+        {
+            Visit(node->Function(), byteCode, constantPool);
+            byteCode.AddOp(OpCode::INVOKE_CLOSURE);
+        }
         else
         {
-            throw std::runtime_error("Unsupported call expression location kind");
+            spdlog::error("Unsupported call expression location kind.");
+            throw std::runtime_error("Unsupported call expression location kind.");
         }
     }
     else

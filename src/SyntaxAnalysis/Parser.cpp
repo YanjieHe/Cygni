@@ -40,7 +40,8 @@ const Token &Parser::Match(TokenTag tag)
     else
     {
         spdlog::error("Source code file: {}, line: {}, column: {}. Expecting '{}', got '{}'.", document->FileName(),
-                      Look().line, Look().column, Utility::EnumToString(tag), Utility::EnumToString(Look().tag));
+                      Look().line + 1, Look().column + 1, Utility::EnumToString(tag),
+                      Utility::EnumToString(Look().tag));
 
         throw ParserException(
             __FILE__, __LINE__,
@@ -287,7 +288,8 @@ ExpPtr Parser::ParsePostfix()
 
                 spdlog::error("Source code file: {}, line: {}, column: {}. Expecting 'Identifier' when parsing a "
                               "qualified name, got '{}'.",
-                              document->FileName(), Look().line, Look().column, Utility::EnumToString(Look().tag));
+                              document->FileName(), Look().line + 1, Look().column + 1,
+                              Utility::EnumToString(Look().tag));
 
                 throw ParserException(
                     __FILE__, __LINE__,
@@ -631,6 +633,30 @@ TypePtr Parser::ParseType()
     else if (name == U"Void")
     {
         return TypeFactory::CreateBasicType(TypeCode::Empty);
+    }
+    else if (name == U"Array")
+    {
+        Match(TokenTag::LeftBracket);
+        TypePtr elementType = ParseType();
+        Match(TokenTag::RightBracket);
+
+        return typeFactory.CreateArrayType(elementType);
+    }
+    else if (name == U"Func")
+    {
+        Match(TokenTag::LeftBracket);
+        std::vector<const Type *> types;
+        types.push_back(ParseType());
+        while (Look().tag != TokenTag::RightBracket)
+        {
+            Match(TokenTag::Comma);
+            types.push_back(ParseType());
+        }
+        Match(TokenTag::RightBracket);
+        const Type *returnType = types.back();
+        types.pop_back();
+
+        return typeFactory.CreateCallableType(types, returnType);
     }
     else
     {
