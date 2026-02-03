@@ -1,6 +1,4 @@
-file(GLOB
-    SOURCES
-    ${PROJECT_SOURCE_DIR}/src/*.cpp
+file(GLOB CYGNI_CORE_SOURCES
     ${PROJECT_SOURCE_DIR}/src/Expressions/*.cpp
     ${PROJECT_SOURCE_DIR}/src/LexicalAnalysis/*.cpp
     ${PROJECT_SOURCE_DIR}/src/SyntaxAnalysis/*.cpp
@@ -8,11 +6,20 @@ file(GLOB
     ${PROJECT_SOURCE_DIR}/src/Visitors/*.cpp
     ${PROJECT_SOURCE_DIR}/src/FlintByteCode/*.cpp)
 
-include_directories(
-    ${PROJECT_SOURCE_DIR}/libs
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/include/FlintByteCode)
+add_library(cygni_core STATIC
+    ${CYGNI_CORE_SOURCES})
+
+target_include_directories(cygni_core
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/libs)
 
 add_executable(cygni
-    ${PROJECT_SOURCE_DIR}/Main.cpp
-    ${SOURCES})
+    ${PROJECT_SOURCE_DIR}/Main.cpp)
+
+target_link_libraries(cygni PRIVATE cygni_core)
+
+target_include_directories(cygni
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/libs)

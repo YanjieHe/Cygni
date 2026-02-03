@@ -8,7 +8,6 @@
 #include "LexicalAnalysis/Token.hpp"
 #include <stack>
 
-
 namespace Cygni
 {
 namespace SyntaxAnalysis
