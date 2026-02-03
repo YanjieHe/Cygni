@@ -93,7 +93,7 @@ class Lexer
         {
             offset++;
             line++;
-            column = 1;
+            column = 0;
         }
         else
         {

@@ -2,29 +2,33 @@
 
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
+#include "SyntaxAnalysis/ParserException.hpp"
 #include <spdlog/spdlog.h>
 
 using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 
-TEST_CASE("test (15 * 72)", "[Arithmetic]")
+static std::vector<Token> Tokenize(const std::shared_ptr<SourceCodeFile> &sourceCodeFile,
+                                   const std::u32string &sourceCode)
+{
+    Lexer lexer(sourceCodeFile, sourceCode);
+
+    return lexer.ReadAll();
+}
+
+static Parser CreateParser(const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    std::vector<Token> tokens = Tokenize(sourceCodeFile, sourceCode);
 
-    Lexer lexer(sourceCodeFile, U"15 * 72");
+    return Parser(tokens, sourceCodeFile);
+}
 
-    std::vector<Token> tokens = lexer.ReadAll();
+TEST_CASE("test (15 * 72)", "[Arithmetic]")
+{
+    Parser parser = CreateParser(U"15 * 72");
 
-    std::vector<TokenTag> expectedTags = {TokenTag::Integer, TokenTag::Multiply, TokenTag::Integer, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Multiply);
     auto binaryExp = static_cast<BinaryExpression *>(exp);
@@ -36,23 +40,9 @@ TEST_CASE("test (15 * 72)", "[Arithmetic]")
 
 TEST_CASE("test (135 + 27)", "[Arithmetic]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"135 + 27");
 
-    Lexer lexer(sourceCodeFile, U"135 + 27");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::Integer, TokenTag::Add, TokenTag::Integer, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.ParseExpr();
-
     REQUIRE(exp->NodeType() == ExpressionType::Add);
     auto binaryExp = static_cast<BinaryExpression *>(exp);
     REQUIRE(binaryExp->Left() != nullptr);
@@ -63,21 +53,8 @@ TEST_CASE("test (135 + 27)", "[Arithmetic]")
 
 TEST_CASE("test (27 / 9)", "[Arithmetic]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"27 / 9");
 
-    Lexer lexer(sourceCodeFile, U"27 / 9");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::Integer, TokenTag::Divide, TokenTag::Integer, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Divide);
     auto binaryExp = static_cast<BinaryExpression *>(exp);
@@ -87,25 +64,34 @@ TEST_CASE("test (27 / 9)", "[Arithmetic]")
     REQUIRE(binaryExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("unary minus binds tighter than multiply", "[Unary]")
+{
+    Parser parser = CreateParser(U"-5 * 2");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Multiply);
+
+    auto mul = static_cast<BinaryExpression *>(exp);
+    REQUIRE(mul->Left()->NodeType() == ExpressionType::UnaryMinus);
+    REQUIRE(mul->Right()->NodeType() == ExpressionType::Constant);
+}
+
+TEST_CASE("logical not binds tighter than and", "[Unary]")
+{
+    Parser parser = CreateParser(U"not true and false");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::And);
+
+    auto andExp = static_cast<BinaryExpression *>(exp);
+    REQUIRE(andExp->Left()->NodeType() == ExpressionType::Not);
+    REQUIRE(andExp->Right()->NodeType() == ExpressionType::Constant);
+}
+
 TEST_CASE("test complex expression", "[Complex]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"(5 + 8) * 2");
 
-    Lexer lexer(sourceCodeFile, U"(5 + 8) * 2");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {
-        TokenTag::LeftParenthesis,  TokenTag::Integer,  TokenTag::Add,     TokenTag::Integer,
-        TokenTag::RightParenthesis, TokenTag::Multiply, TokenTag::Integer, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Multiply);
     auto multiplyExp = static_cast<BinaryExpression *>(exp);
@@ -115,25 +101,26 @@ TEST_CASE("test complex expression", "[Complex]")
     REQUIRE(multiplyExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("simple less-than comparison", "[Relation]")
+{
+    Parser parser = CreateParser(U"1 < 2");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::LessThan);
+}
+
+TEST_CASE("chained comparison is rejected", "[Relation]")
+{
+    Parser parser = CreateParser(U"a < b < c");
+
+    REQUIRE_THROWS_AS(parser.Statement(), ParserException);
+}
+
 TEST_CASE("test (true and false)", "[Logical]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"true and false");
 
-    Lexer lexer(sourceCodeFile, U"true and false");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::True, TokenTag::And, TokenTag::False, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.ParseOr();
-
     REQUIRE(exp->NodeType() == ExpressionType::And);
     auto binaryExp = static_cast<BinaryExpression *>(exp);
     REQUIRE(binaryExp->Left() != nullptr);
@@ -142,24 +129,29 @@ TEST_CASE("test (true and false)", "[Logical]")
     REQUIRE(binaryExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("and binds tighter than or", "[Logical]")
+{
+    Parser parser = CreateParser(U"true or false and true");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::Or);
+
+    auto orExp = static_cast<BinaryExpression *>(exp);
+    REQUIRE(orExp->Right()->NodeType() == ExpressionType::And);
+}
+
+TEST_CASE("logical operators are left associative", "[Logical]")
+{
+    Parser parser = CreateParser(U"true and false and true");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::And);
+}
+
 TEST_CASE("test (x = 42)", "[Assignment]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"x = 42;");
 
-    Lexer lexer(sourceCodeFile, U"x = 42;");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::Identifier, TokenTag::Assign, TokenTag::Integer,
-                                          TokenTag::Semicolon, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.Statement();
     REQUIRE(exp->NodeType() == ExpressionType::Assign);
     auto assignExp = static_cast<BinaryExpression *>(exp);
@@ -169,31 +161,27 @@ TEST_CASE("test (x = 42)", "[Assignment]")
     REQUIRE(assignExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("member access chains left to right", "[Postfix]")
+{
+    Parser parser = CreateParser(U"a.b.c");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::MemberAccess);
+}
+
+TEST_CASE("member access has higher precedence than add", "[Postfix]")
+{
+    Parser parser = CreateParser(U"a.b + c");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Add);
+}
+
 TEST_CASE("test if-else statement", "[ControlFlow]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"if (true) { 10; } else { 20; }");
 
-    Lexer lexer(sourceCodeFile, U"if (true) { 10; } else { 20; }");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::If,         TokenTag::LeftParenthesis,
-                                          TokenTag::True,       TokenTag::RightParenthesis,
-                                          TokenTag::LeftBrace,  TokenTag::Integer,
-                                          TokenTag::Semicolon,  TokenTag::RightBrace,
-                                          TokenTag::Else,       TokenTag::LeftBrace,
-                                          TokenTag::Integer,    TokenTag::Semicolon,
-                                          TokenTag::RightBrace, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.Statement();
-
     REQUIRE(exp->NodeType() == ExpressionType::Conditional);
     auto conditionalExp = static_cast<ConditionalExpression *>(exp);
     REQUIRE(conditionalExp->Test() != nullptr);
@@ -201,28 +189,19 @@ TEST_CASE("test if-else statement", "[ControlFlow]")
     REQUIRE(conditionalExp->IfFalse() != nullptr);
 }
 
+TEST_CASE("if else-if else forms nested conditionals", "[ControlFlow]")
+{
+    Parser parser = CreateParser(U"if (a) { 1; } else if (b) { 2; } else { 3; }");
+
+    auto stmt = parser.Statement();
+    REQUIRE(stmt->NodeType() == ExpressionType::Conditional);
+}
+
 TEST_CASE("test while statement", "[ControlFlow]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"while (true) { 35; }");
 
-    Lexer lexer(sourceCodeFile, U"while (true) { 35; }");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {
-        TokenTag::While,     TokenTag::LeftParenthesis, TokenTag::True,      TokenTag::RightParenthesis,
-        TokenTag::LeftBrace, TokenTag::Integer,         TokenTag::Semicolon, TokenTag::RightBrace,
-        TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.Statement();
-
     REQUIRE(exp->NodeType() == ExpressionType::WhileLoop);
     auto loopExp = static_cast<WhileLoopExpression *>(exp);
     REQUIRE(loopExp->Condition() != nullptr);
@@ -232,27 +211,44 @@ TEST_CASE("test while statement", "[ControlFlow]")
     REQUIRE(loopExp->Body()->NodeType() == ExpressionType::Block);
 }
 
+TEST_CASE("nested if inside while", "[ControlFlow]")
+{
+    Parser parser = CreateParser(U"while (a) { if (b) { 1; } }");
+
+    auto stmt = parser.Statement();
+    REQUIRE(stmt->NodeType() == ExpressionType::WhileLoop);
+}
+
+TEST_CASE("nested while inside if", "[ControlFlow]")
+{
+    Parser parser = CreateParser(U"if (a) { while (b) { 1; } }");
+
+    auto stmt = parser.Statement();
+    REQUIRE(stmt->NodeType() == ExpressionType::Conditional);
+}
+
+TEST_CASE("empty block is allowed", "[Block]")
+{
+    Parser parser = CreateParser(U"{ }");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Block);
+}
+
+TEST_CASE("block can contain multiple statements", "[Block]")
+{
+    Parser parser = CreateParser(U"{ 1; 2; 3; }");
+
+    auto exp = parser.ParseExpr();
+    auto block = static_cast<BlockExpression *>(exp);
+    REQUIRE(block->Expressions().size() == 3);
+}
+
 TEST_CASE("test function call", "[Function]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"f(12, 13);");
 
-    Lexer lexer(sourceCodeFile, U"f(12, 13);");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {
-        TokenTag::Identifier, TokenTag::LeftParenthesis,  TokenTag::Integer,   TokenTag::Comma,
-        TokenTag::Integer,    TokenTag::RightParenthesis, TokenTag::Semicolon, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     auto exp = parser.Statement();
-
     REQUIRE(exp->NodeType() == ExpressionType::Call);
     auto callExp = static_cast<CallExpression *>(exp);
     REQUIRE(callExp->Function() != nullptr);
@@ -265,49 +261,74 @@ TEST_CASE("test function call", "[Function]")
     }
 }
 
+TEST_CASE("function declaration with body", "[Function]")
+{
+    Parser parser = CreateParser(U"module M { func f(): Int { 1; } }");
+
+    REQUIRE_NOTHROW(parser.ParseNamespace());
+}
+
+TEST_CASE("function declaration without body", "[Function]")
+{
+    Parser parser = CreateParser(U"module M { func f(): Void; }");
+
+    REQUIRE_NOTHROW(parser.ParseNamespace());
+}
+
+TEST_CASE("nested function calls are allowed", "[Call]")
+{
+    Parser parser = CreateParser(U"f()(1)");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Call);
+}
+
+TEST_CASE("call after member access", "[Call]")
+{
+    Parser parser = CreateParser(U"a.b(c)");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Call);
+}
+
+TEST_CASE("local variable declaration inside block", "[Var]")
+{
+    Parser parser = CreateParser(U"{ var x = 1; x; }");
+
+    auto exp = parser.ParseExpr();
+    auto block = static_cast<BlockExpression *>(exp);
+    REQUIRE(block->Expressions().size() == 2);
+}
+
+TEST_CASE("typed local variable declaration", "[Var]")
+{
+    Parser parser = CreateParser(U"var x: Int = 1;");
+
+    auto stmt = parser.Statement();
+    REQUIRE(stmt->NodeType() == ExpressionType::VariableDeclaration);
+}
+
 TEST_CASE("test parsing namespace path", "[Namespace]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"apple::banana::orange");
 
-    Lexer lexer(sourceCodeFile, U"apple::banana::orange");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::Identifier, TokenTag::ScopeResolutionOperator,
-                                          TokenTag::Identifier, TokenTag::ScopeResolutionOperator,
-                                          TokenTag::Identifier, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     std::vector<std::u32string> path = parser.ParseNamespacePath();
     REQUIRE(path.size() == 3);
     REQUIRE(path == std::vector<std::u32string>{U"apple", U"banana", U"orange"});
 }
 
+TEST_CASE("qualified namespace path parses as parameter expression", "[Scope]")
+{
+    Parser parser = CreateParser(U"apple::banana::orange");
+
+    auto exp = parser.ParseExpr();
+    REQUIRE(exp->NodeType() == ExpressionType::Parameter);
+}
+
 TEST_CASE("test parsing structure definition with one field", "[Structure]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"struct Apple { weight: Double; }");
 
-    Lexer lexer(sourceCodeFile, U"struct Apple { weight: Double; }");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {TokenTag::Structure,  TokenTag::Identifier, TokenTag::LeftBrace,
-                                          TokenTag::Identifier, TokenTag::Colon,      TokenTag::Identifier,
-                                          TokenTag::Semicolon,  TokenTag::RightBrace, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
     REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 1);
@@ -316,24 +337,8 @@ TEST_CASE("test parsing structure definition with one field", "[Structure]")
 
 TEST_CASE("test parsing structure definition with two fields", "[Structure]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"struct Apple { weight: Double; price: Double; }");
 
-    Lexer lexer(sourceCodeFile, U"struct Apple { weight: Double; price: Double; }");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {
-        TokenTag::Structure,  TokenTag::Identifier, TokenTag::LeftBrace,  TokenTag::Identifier, TokenTag::Colon,
-        TokenTag::Identifier, TokenTag::Semicolon,  TokenTag::Identifier, TokenTag::Colon,      TokenTag::Identifier,
-        TokenTag::Semicolon,  TokenTag::RightBrace, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 2);
     REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 1);
@@ -342,25 +347,8 @@ TEST_CASE("test parsing structure definition with two fields", "[Structure]")
 
 TEST_CASE("test parsing structure definition with two fields inside a namespace", "[Structure]")
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
+    Parser parser = CreateParser(U"module Fruits { struct Apple { weight: Double; price: Double; } }");
 
-    Lexer lexer(sourceCodeFile, U"module Fruits { struct Apple { weight: Double; price: Double; } }");
-
-    std::vector<Token> tokens = lexer.ReadAll();
-
-    std::vector<TokenTag> expectedTags = {
-        TokenTag::Module,     TokenTag::Identifier, TokenTag::LeftBrace,  TokenTag::Structure,  TokenTag::Identifier,
-        TokenTag::LeftBrace,  TokenTag::Identifier, TokenTag::Colon,      TokenTag::Identifier, TokenTag::Semicolon,
-        TokenTag::Identifier, TokenTag::Colon,      TokenTag::Identifier, TokenTag::Semicolon,  TokenTag::RightBrace,
-        TokenTag::RightBrace, TokenTag::Eof};
-
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
     parser.ParseNamespace();
     StructureExpression *structureDefinition =
         parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"Fruits", U"Apple"});
@@ -369,4 +357,32 @@ TEST_CASE("test parsing structure definition with two fields inside a namespace"
     REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 2);
     REQUIRE(structureDefinition->GetType()->QualifiedName().at(0) == U"Fruits");
     REQUIRE(structureDefinition->GetType()->QualifiedName().at(1) == U"Apple");
+}
+
+TEST_CASE("annotation on function declaration", "[Annotation]")
+{
+    Parser parser = CreateParser(U"module M { @A(x=\"1\") func f(): Void; }");
+
+    REQUIRE_NOTHROW(parser.ParseNamespace());
+}
+
+TEST_CASE("if without parentheses is rejected", "[Error]")
+{
+    Parser parser = CreateParser(U"if true { 1; }");
+
+    REQUIRE_THROWS_AS(parser.Statement(), ParserException);
+}
+
+TEST_CASE("missing initializer in variable declaration", "[Error]")
+{
+    Parser parser = CreateParser(U"var x = ;");
+
+    REQUIRE_THROWS_AS(parser.Statement(), ParserException);
+}
+
+TEST_CASE("missing semicolon in new expression", "[Error]")
+{
+    Parser parser = CreateParser(U"new Foo { a = 1 }");
+
+    REQUIRE_THROWS_AS(parser.ParseExpr(), ParserException);
 }
