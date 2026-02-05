@@ -17,7 +17,7 @@ using LexicalAnalysis::Token;
 using namespace Cygni::Expressions;
 
 using ExpPtr = Expressions::Expression *;
-using TypePtr = Expressions::Type *;
+using TypeSyntaxPtr = Expressions::TypeSyntax *;
 
 class Parser
 {
@@ -26,7 +26,7 @@ class Parser
     std::shared_ptr<LexicalAnalysis::SourceCodeFile> document;
     int offset;
     Expressions::ExpressionFactory expressionFactory;
-    Expressions::TypeFactory typeFactory;
+    Expressions::TypeSyntaxFactory typeSyntaxFactory;
     Expressions::NamespaceFactory namespaceFactory;
     std::stack<Expressions::Namespace *> namespaceStack;
 
@@ -114,9 +114,9 @@ class Parser
 
     Expressions::ParameterExpression *ParseParameter();
 
-    TypePtr ParseType();
+    TypeSyntaxPtr ParseType();
 
-    StructureType *ParseStructureType();
+    std::vector<TypeSyntax *> ParseTypeArguments();
 
     void ParseNamespace();
 

@@ -1,5 +1,4 @@
 #include "FlintByteCode/ByteCode.hpp"
-#include <iostream>
 #include <fstream>
 #include <bit_converter/bit_converter.hpp>
 

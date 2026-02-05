@@ -121,8 +121,7 @@ ExpPtr Parser::ParseNot()
     {
         Match(TokenTag::Not);
         auto x = ParseEquality();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x,
-                                                         TypeFactory::CreateBasicType(TypeCode::Unknown));
+        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
     }
     else
     {
@@ -233,22 +232,19 @@ ExpPtr Parser::ParseUnary()
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryPlus, x,
-                                                         TypeFactory::CreateBasicType(TypeCode::Unknown));
+        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryPlus, x, nullptr);
     }
     else if (Look().tag == TokenTag::Subtract)
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryMinus, x,
-                                                         TypeFactory::CreateBasicType(TypeCode::Unknown));
+        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryMinus, x, nullptr);
     }
     else if (Look().tag == TokenTag::Not)
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x,
-                                                         TypeFactory::CreateBasicType(TypeCode::Unknown));
+        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
     }
     else
     {
@@ -280,8 +276,7 @@ ExpPtr Parser::ParsePostfix()
                     Match(TokenTag::ScopeResolutionOperator);
                     qualifiedName.push_back(Match(TokenTag::Identifier).text);
                 }
-                x = expressionFactory.Create<ParameterExpression>(Pos(start), qualifiedName,
-                                                                  TypeFactory::CreateBasicType(TypeCode::Unknown));
+                x = expressionFactory.Create<ParameterExpression>(Pos(start), qualifiedName, nullptr);
             }
             else
             {
@@ -374,8 +369,7 @@ ExpPtr Parser::ParseFactor()
         std::u32string name = Look().text;
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name},
-                                                             TypeFactory::CreateBasicType(TypeCode::Unknown));
+        return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, nullptr);
     }
     else if (Look().tag == TokenTag::New)
     {
@@ -408,7 +402,9 @@ ExpPtr Parser::IfStatement()
 {
     const Token &start = Look();
     Match(TokenTag::If);
+    Match(TokenTag::LeftParenthesis);
     ExpPtr condition = ParseOr();
+    Match(TokenTag::RightParenthesis);
     ExpPtr ifTrue = ParseBlock();
     if (Look().tag == TokenTag::Else)
     {
@@ -426,8 +422,9 @@ ExpPtr Parser::IfStatement()
     }
     else
     {
-        auto empty =
-            expressionFactory.Create<DefaultExpression>(Pos(Look()), TypeFactory::CreateBasicType(TypeCode::Empty));
+        auto emptyRange = Pos(Look());
+        auto *voidType = typeSyntaxFactory.Create(emptyRange, std::vector<std::u32string>{U"Void"}, {});
+        auto empty = expressionFactory.Create<DefaultExpression>(emptyRange, voidType);
         return expressionFactory.Create<ConditionalExpression>(Pos(start), condition, ifTrue, empty);
     }
 }
@@ -448,20 +445,16 @@ Expressions::VariableDeclarationExpression *Parser::VariableDeclarationStatement
     const Token &start = Look();
     Match(TokenTag::Var);
     std::u32string name = Match(TokenTag::Identifier).text;
-    Type *type;
+    TypeSyntax *typeSyntax = nullptr;
     if (Look().tag == TokenTag::Colon)
     {
         Match(TokenTag::Colon);
-        type = ParseType();
-    }
-    else
-    {
-        type = TypeFactory::CreateBasicType(TypeCode::Unknown);
+        typeSyntax = ParseType();
     }
     Match(TokenTag::Assign);
     auto initializer = ParseOr();
 
-    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, type, initializer);
+    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
 }
 
 Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::vector<Annotation> &annotations)
@@ -488,7 +481,7 @@ Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::v
     }
     Match(TokenTag::RightParenthesis);
     Match(TokenTag::Colon);
-    TypePtr returnType = ParseType();
+    TypeSyntaxPtr returnType = ParseType();
     if (Look().tag == TokenTag::Semicolon)
     {
         ExpPtr body = expressionFactory.Create<DefaultExpression>(Pos(Look()), returnType);
@@ -509,11 +502,11 @@ Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable()
     const Token &start = Look();
     Match(TokenTag::Var);
     std::u32string name = Match(TokenTag::Identifier).text;
-    Type *type;
+    TypeSyntax *typeSyntax = nullptr;
     if (Look().tag == TokenTag::Colon)
     {
         Match(TokenTag::Colon);
-        type = ParseType();
+        typeSyntax = ParseType();
     }
     else
     {
@@ -527,7 +520,7 @@ Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable()
     auto initializer = ParseOr();
     Match(TokenTag::Semicolon);
 
-    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, type, initializer);
+    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
 }
 
 Expressions::StructureExpression *Parser::ParseStructureDefinition()
@@ -537,13 +530,13 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
     std::u32string name = Match(TokenTag::Identifier).text;
     Match(TokenTag::LeftBrace);
 
-    Utility::OrderPreservingMap<std::u32string, const Type *> fields;
+    Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields;
     while (Look().tag != TokenTag::RightBrace)
     {
         std::u32string name = Match(TokenTag::Identifier).text;
         Match(TokenTag::Colon);
-        Type *type = ParseType();
-        fields.AddItem(name, type);
+        TypeSyntax *typeSyntax = ParseType();
+        fields.AddItem(name, typeSyntax);
         Match(TokenTag::Semicolon);
     }
     Match(TokenTag::RightBrace);
@@ -556,9 +549,7 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
         qualifiedName.push_back(path.at(i));
     }
     qualifiedName.push_back(name);
-    StructureType *structureType = typeFactory.CreateStructureType(qualifiedName, fields);
-
-    return expressionFactory.Create<StructureExpression>(Pos(start), structureType, fields);
+    return expressionFactory.Create<StructureExpression>(Pos(start), qualifiedName, fields);
 }
 
 std::vector<ExpPtr> Parser::ParseArguments()
@@ -594,82 +585,46 @@ Expressions::ParameterExpression *Parser::ParseParameter()
     const Token &start = Look();
     std::u32string name = Match(TokenTag::Identifier).text;
     Match(TokenTag::Colon);
-    TypePtr type = ParseType();
+    TypeSyntaxPtr type = ParseType();
 
     return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, type);
 }
 
-TypePtr Parser::ParseType()
+TypeSyntaxPtr Parser::ParseType()
 {
+    const Token &start = Look();
     std::u32string name = Match(TokenTag::Identifier).text;
-    if (name == U"Int")
+    std::vector<std::u32string> qualifiedName{name};
+    while (Look().tag == TokenTag::ScopeResolutionOperator)
     {
-        return TypeFactory::CreateBasicType(TypeCode::Int32);
+        Match(TokenTag::ScopeResolutionOperator);
+        qualifiedName.push_back(Match(TokenTag::Identifier).text);
     }
-    else if (name == U"Long")
+    if (Look().tag == TokenTag::LeftBracket)
     {
-        return TypeFactory::CreateBasicType(TypeCode::Int64);
-    }
-    else if (name == U"Bool")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::Boolean);
-    }
-    else if (name == U"Float")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::Float32);
-    }
-    else if (name == U"Double")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::Float64);
-    }
-    else if (name == U"Char")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::Char);
-    }
-    else if (name == U"String")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::String);
-    }
-    else if (name == U"Void")
-    {
-        return TypeFactory::CreateBasicType(TypeCode::Empty);
-    }
-    else if (name == U"Array")
-    {
-        Match(TokenTag::LeftBracket);
-        TypePtr elementType = ParseType();
-        Match(TokenTag::RightBracket);
+        auto arguments = ParseTypeArguments();
 
-        return typeFactory.CreateArrayType(elementType);
-    }
-    else if (name == U"Func")
-    {
-        Match(TokenTag::LeftBracket);
-        std::vector<const Type *> types;
-        types.push_back(ParseType());
-        while (Look().tag != TokenTag::RightBracket)
-        {
-            Match(TokenTag::Comma);
-            types.push_back(ParseType());
-        }
-        Match(TokenTag::RightBracket);
-        const Type *returnType = types.back();
-        types.pop_back();
-
-        return typeFactory.CreateCallableType(types, returnType);
+        return typeSyntaxFactory.Create(Pos(start), qualifiedName, arguments);
     }
     else
     {
-        Back();
-        return ParseStructureType();
+        return typeSyntaxFactory.Create(Pos(start), qualifiedName, {});
     }
 }
 
-StructureType *Parser::ParseStructureType()
+std::vector<TypeSyntax *> Parser::ParseTypeArguments()
 {
-    std::vector<std::u32string> path = ParseNamespacePath();
+    Match(TokenTag::LeftBracket);
+    std::vector<TypeSyntax *> arguments;
+    arguments.push_back(ParseType());
+    while (Look().tag != TokenTag::RightBracket)
+    {
+        Match(TokenTag::Comma);
+        arguments.push_back(ParseType());
+    }
+    Match(TokenTag::RightBracket);
 
-    return typeFactory.CreateStructureType(path, {});
+    return arguments;
 }
 
 void Parser::ParseNamespace()
@@ -702,8 +657,7 @@ void Parser::ParseNamespace()
             }
             case TokenTag::Structure: {
                 StructureExpression *structureDefinition = ParseStructureDefinition();
-                current->Structures().AddItem(structureDefinition->GetType()->QualifiedName().back(),
-                                              structureDefinition);
+                current->Structures().AddItem(structureDefinition->QualifiedName().back(), structureDefinition);
 
                 break;
             }
@@ -796,26 +750,18 @@ Expressions::NewExpression *Parser::ParseNewExpression()
     std::vector<std::u32string> namespacePath = ParseNamespacePath();
     Utility::OrderPreservingMap<std::u32string, Expressions::Expression *> fieldsInitialization;
     Match(TokenTag::LeftBrace);
-    bool isFirstField = true;
     while (Look().tag != TokenTag::RightBrace)
     {
-        if (isFirstField)
-        {
-            isFirstField = false;
-        }
-        else
-        {
-            Match(TokenTag::Comma);
-        }
         std::u32string fieldName = Match(TokenTag::Identifier).text;
         Match(TokenTag::Assign);
         Expressions::Expression *value = ParseOr();
+        Match(TokenTag::Semicolon);
         fieldsInitialization.AddItem(fieldName, value);
     }
     Match(TokenTag::RightBrace);
-    StructureType *structureType = typeFactory.CreateStructureType(namespacePath, {});
+    TypeSyntax *typeSyntax = typeSyntaxFactory.Create(Pos(start), namespacePath, {});
     NewExpression *newExpression =
-        expressionFactory.Create<NewExpression>(Pos(start), static_cast<Type *>(structureType), fieldsInitialization);
+        expressionFactory.Create<NewExpression>(Pos(start), typeSyntax, fieldsInitialization);
     spdlog::info("Completing creating the object initialization expression.");
 
     return newExpression;

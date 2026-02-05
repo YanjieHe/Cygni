@@ -17,7 +17,8 @@ class TreeException : public Utility::Exception
   public:
     TreeException(std::string source, int line, std::string message, const Expression *tree,
                   const std::exception *innerException)
-        : Exception(source, line, message, innerException), sourceRange{tree->GetSourceRange()}
+        : Exception(source, line, message, innerException),
+          sourceRange{tree ? tree->GetSourceRange() : SourceRange(nullptr, 0, 0, 0, 0)}
     {
     }
 

@@ -215,14 +215,14 @@ const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<c
         VariableDeclarationExpression *varDecl = namespaceFactory.SearchGlobalVariable(top, node->QualifiedName());
         if (varDecl != nullptr)
         {
-            const Type *type = varDecl->GetType();
+            const Type *type = ResolveTypeSyntax(varDecl->GetTypeSyntax());
 
             return Register(node, type);
         }
         LambdaExpression *funcDecl = namespaceFactory.SearchFunction(top, node->QualifiedName());
         if (funcDecl != nullptr)
         {
-            CallableType *callableType = funcDecl->GetCallableType(Types);
+            CallableType *callableType = BuildCallableType(funcDecl);
 
             return Register(node, static_cast<const Type *>(callableType));
         }
@@ -293,7 +293,8 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
         }
     }
     case ExpressionType::Convert: {
-        if (TypeFactory::AreTypesEqual(operand, node->GetType()))
+        const Type *targetType = ResolveTypeSyntax(node->GetTargetTypeSyntax());
+        if (TypeFactory::AreTypesEqual(operand, targetType))
         {
             return Register(node, operand);
         }
@@ -303,14 +304,11 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
                 operand->GetTypeCode() == TypeCode::Float32 || operand->GetTypeCode() == TypeCode::Float64 ||
                 operand->GetTypeCode() == TypeCode::Boolean || operand->GetTypeCode() == TypeCode::Char)
             {
-                if (node->GetType()->GetTypeCode() == TypeCode::Int32 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Int64 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Float32 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Float64 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Boolean ||
-                    node->GetType()->GetTypeCode() == TypeCode::Char)
+                if (targetType->GetTypeCode() == TypeCode::Int32 || targetType->GetTypeCode() == TypeCode::Int64 ||
+                    targetType->GetTypeCode() == TypeCode::Float32 || targetType->GetTypeCode() == TypeCode::Float64 ||
+                    targetType->GetTypeCode() == TypeCode::Boolean || targetType->GetTypeCode() == TypeCode::Char)
                 {
-                    return Register(node, node->GetType());
+                    return Register(node, targetType);
                 }
             }
             throw TreeException(__FILE__, __LINE__, "convert type mismatch error.", node, nullptr);
@@ -361,8 +359,9 @@ const Type *TypeChecker::VisitLambda(const LambdaExpression *node, Scope<const T
     for (const auto &parameter : node->Parameters())
     {
         spdlog::debug("Type checker declares parameter \"{}\".", Utility::UTF32ToUTF8(parameter->Name()));
-        scope.Declare(parameter->Name(), parameter->GetType());
-        argumentTypes.push_back(parameter->GetType());
+        const Type *parameterType = ResolveTypeSyntax(parameter->GetTypeSyntax());
+        scope.Declare(parameter->Name(), parameterType);
+        argumentTypes.push_back(parameterType);
     }
     const Type *returnType = Visit(node->Body(), &scope);
     return Types.CreateCallableType(argumentTypes, returnType);
@@ -385,13 +384,13 @@ const Type *TypeChecker::VisitWhileLoop(const WhileLoopExpression *node, Scope<c
 
 const Type *TypeChecker::VisitDefault(const DefaultExpression *node, Scope<const Type *> *scope)
 {
-    return node->GetType();
+    return ResolveTypeSyntax(node->GetTypeSyntax());
 }
 
 const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpression *node, Scope<const Type *> *scope)
 {
     const Type *initializer = Visit(node->Initializer(), scope);
-    if (node->GetType()->GetTypeCode() == TypeCode::Unknown)
+    if (node->GetTypeSyntax() == nullptr)
     {
         scope->Declare(node->Name(), initializer);
         Register(node, initializer);
@@ -400,7 +399,7 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
     }
     else
     {
-        const Type *leftType = VisitType(node->GetType());
+        const Type *leftType = ResolveTypeSyntax(node->GetTypeSyntax());
         if (TypeFactory::AreTypesEqual(leftType, initializer))
         {
             scope->Declare(node->Name(), initializer);
@@ -421,9 +420,8 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
 
 const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *> *scope)
 {
-    spdlog::info("Create a new object of type '{}'", Utility::EnumToString(node->GetType()->GetTypeCode()));
-
-    const Type *type = VisitType(node->GetType());
+    const Type *type = ResolveTypeSyntax(node->GetTypeSyntax());
+    spdlog::info("Create a new object of type '{}'", Utility::EnumToString(type->GetTypeCode()));
     Register(node, type);
     if (type->GetTypeCode() == TypeCode::Structure)
     {
@@ -459,7 +457,7 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
                     {
                         /* Check if the types are equal. */
                         const Type *actualType = Visit(node->FieldsInitialization().GetItemByKey(key), scope);
-                        const Type *expectedType = structureDefinition->Fields().GetItemByKey(key);
+                        const Type *expectedType = ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(key));
                         if (TypeFactory::AreTypesEqual(expectedType, actualType))
                         {
                             fieldNameSet.insert(key);
@@ -488,7 +486,7 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
             }
             if (fieldNameSet.size() == structureDefinition->Fields().GetAllItems().size())
             {
-                return structureDefinition->GetType();
+                return type;
             }
             else
             {
@@ -560,13 +558,13 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
     /* Declare the types of global variables. */
     for (const auto &varDecl : top->GlobalVariables().GetAllItems())
     {
-        scope->Declare(varDecl->Name(), varDecl->GetType());
+        scope->Declare(varDecl->Name(), ResolveTypeSyntax(varDecl->GetTypeSyntax()));
     }
 
     /* Declare the types of functions. */
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
-        CallableType *callableType = funcDecl->GetCallableType(Types);
+        CallableType *callableType = BuildCallableType(funcDecl);
         scope->Declare(funcDecl->Name(), callableType);
     }
 
@@ -586,6 +584,10 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
                                 "declared function type.",
                                 funcDecl, nullptr);
         }
+        else
+        {
+            Register(funcDecl, declarationType);
+        }
     }
 
     for (const auto &current : top->Children().GetAllItems())
@@ -601,7 +603,8 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
 {
     Scope<const Type *> *scope(parent);
     const Type *initializerType = Visit(node->Initializer(), scope);
-    if (TypeFactory::AreTypesEqual(node->GetType(), initializerType))
+    const Type *declaredType = ResolveTypeSyntax(node->GetTypeSyntax());
+    if (TypeFactory::AreTypesEqual(declaredType, initializerType))
     {
         scope->Declare(node->Name(), initializerType);
         Register(node, initializerType);
@@ -610,9 +613,9 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
         std::u32string initializerName = node->Name() + U"#Initializer";
         LambdaExpression *initializer = expressionFactory.Create<LambdaExpression>(
             node->Initializer()->GetSourceRange(), initializerName, node->Initializer(),
-            std::vector<ParameterExpression *>{}, initializerType, std::vector<Annotation>{});
+            std::vector<ParameterExpression *>{}, nullptr, std::vector<Annotation>{});
         current->Functions().AddItem(initializerName, initializer);
-        parent->Declare(initializerName, initializer->GetCallableType(Types));
+        parent->Declare(initializerName, Types.CreateCallableType({}, initializerType));
     }
     else
     {
@@ -622,24 +625,6 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
 
         throw TreeException(__FILE__, __LINE__, "The assigned value does not match the declared variable type.",
                             static_cast<const Expression *>(node), nullptr);
-    }
-}
-
-const Type *TypeChecker::VisitType(const Type *type)
-{
-    if (type->GetTypeCode() == TypeCode::Structure)
-    {
-        const StructureType *structureType = static_cast<const StructureType *>(type);
-
-        auto path = structureType->QualifiedName();
-        Namespace *top = namespaceStack.top();
-        StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, path);
-
-        return structureDefinition->GetType();
-    }
-    else
-    {
-        return type;
     }
 }
 
@@ -710,6 +695,111 @@ bool TypeChecker::CheckFunctionType(const Type *declaration, const Type *actual)
 
         return false;
     }
+}
+
+const Type *TypeChecker::ResolveTypeSyntax(const TypeSyntax *typeSyntax)
+{
+    if (typeSyntax == nullptr)
+    {
+        return TypeFactory::CreateBasicType(TypeCode::Unknown);
+    }
+
+    const auto &qualifiedName = typeSyntax->QualifiedName();
+    if (qualifiedName.size() == 1)
+    {
+        const std::u32string &name = qualifiedName.front();
+        if (name == U"Int")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Int32);
+        }
+        else if (name == U"Long")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Int64);
+        }
+        else if (name == U"Bool")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Boolean);
+        }
+        else if (name == U"Float")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Float32);
+        }
+        else if (name == U"Double")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Float64);
+        }
+        else if (name == U"Char")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Char);
+        }
+        else if (name == U"String")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::String);
+        }
+        else if (name == U"Void")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Empty);
+        }
+        else if (name == U"Array")
+        {
+            if (typeSyntax->Arguments().size() != 1)
+            {
+                throw TreeException(__FILE__, __LINE__, "Array type must have exactly one argument.", nullptr, nullptr);
+            }
+            return Types.CreateArrayType(ResolveTypeSyntax(typeSyntax->Arguments().front()));
+        }
+        else if (name == U"Func")
+        {
+            if (typeSyntax->Arguments().empty())
+            {
+                throw TreeException(__FILE__, __LINE__, "Func type must specify at least a return type.", nullptr,
+                                    nullptr);
+            }
+            std::vector<const Type *> argumentTypes;
+            argumentTypes.reserve(typeSyntax->Arguments().size() - 1);
+            for (size_t i = 0; i + 1 < typeSyntax->Arguments().size(); ++i)
+            {
+                argumentTypes.push_back(ResolveTypeSyntax(typeSyntax->Arguments().at(i)));
+            }
+            const Type *returnType = ResolveTypeSyntax(typeSyntax->Arguments().back());
+            return Types.CreateCallableType(argumentTypes, returnType);
+        }
+    }
+
+    Namespace *top = namespaceStack.top();
+    StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, qualifiedName);
+    if (structureDefinition == nullptr)
+    {
+        spdlog::error("The structure '{}' is not defined.",
+                      Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)));
+        throw TreeException(__FILE__, __LINE__, "The structure is not defined.", nullptr, nullptr);
+    }
+
+    return ResolveStructureDefinition(structureDefinition);
+}
+
+StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *structureDefinition)
+{
+    Utility::OrderPreservingMap<std::u32string, const Type *> resolvedFields;
+    for (const std::u32string &fieldName : structureDefinition->Fields().GetAllKeys())
+    {
+        resolvedFields.AddItem(fieldName, ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(fieldName)));
+    }
+
+    /* TODO: resolve implemented interfaces */
+    return Types.CreateStructureType(structureDefinition->QualifiedName(), resolvedFields, {});
+}
+
+CallableType *TypeChecker::BuildCallableType(const LambdaExpression *node)
+{
+    std::vector<const Type *> parameterTypes;
+    parameterTypes.reserve(node->Parameters().size());
+    for (const auto &parameter : node->Parameters())
+    {
+        parameterTypes.push_back(ResolveTypeSyntax(parameter->GetTypeSyntax()));
+    }
+    const Type *returnType = ResolveTypeSyntax(node->ReturnTypeSyntax());
+    return Types.CreateCallableType(parameterTypes, returnType);
 }
 
 }; /* namespace Visitors */

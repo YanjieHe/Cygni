@@ -331,8 +331,8 @@ TEST_CASE("test parsing structure definition with one field", "[Structure]")
 
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 1);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().back() == U"Apple");
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Apple");
 }
 
 TEST_CASE("test parsing structure definition with two fields", "[Structure]")
@@ -341,8 +341,8 @@ TEST_CASE("test parsing structure definition with two fields", "[Structure]")
 
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 2);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 1);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().back() == U"Apple");
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Apple");
 }
 
 TEST_CASE("test parsing structure definition with two fields inside a namespace", "[Structure]")
@@ -354,9 +354,9 @@ TEST_CASE("test parsing structure definition with two fields inside a namespace"
         parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"Fruits", U"Apple"});
     REQUIRE(structureDefinition != nullptr);
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 2);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().size() == 2);
-    REQUIRE(structureDefinition->GetType()->QualifiedName().at(0) == U"Fruits");
-    REQUIRE(structureDefinition->GetType()->QualifiedName().at(1) == U"Apple");
+    REQUIRE(structureDefinition->QualifiedName().size() == 2);
+    REQUIRE(structureDefinition->QualifiedName().at(0) == U"Fruits");
+    REQUIRE(structureDefinition->QualifiedName().at(1) == U"Apple");
 }
 
 TEST_CASE("annotation on function declaration", "[Annotation]")

@@ -70,16 +70,18 @@ TEST_CASE("namespace search a global variable", "[Namespace]")
 
     Namespace *namespaceConstants = namespaceFactory.Search(root, {U"Physics", U"Constants"});
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
-    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), "299792458", TypeCode::Float64);
-    Float64Type float64Type;
-    VariableDeclarationExpression varDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"SpeedOfLight", &float64Type,
+    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), double_t(299792458), TypeCode::Float64);
+    TypeSyntaxFactory typeSyntaxFactory;
+    TypeSyntax *float64Syntax =
+        typeSyntaxFactory.Create(SourceRange(sourceCodeFile, 0, 0, 0, 0), std::vector<std::u32string>{U"Double"}, {});
+    VariableDeclarationExpression varDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"SpeedOfLight", float64Syntax,
                                           &constant);
     namespaceConstants->GlobalVariables().AddItem(U"SpeedOfLight", &varDecl);
     VariableDeclarationExpression *speedOfLightVar =
         namespaceFactory.SearchGlobalVariable(root, {U"Physics", U"Constants", U"SpeedOfLight"});
     REQUIRE(speedOfLightVar != nullptr);
     REQUIRE(&(varDecl) == speedOfLightVar);
-    REQUIRE(speedOfLightVar->GetType()->GetTypeCode() == TypeCode::Float64);
+    REQUIRE(speedOfLightVar->GetTypeSyntax() == float64Syntax);
 
     VariableDeclarationExpression *nonExistentVar =
         namespaceFactory.SearchGlobalVariable(root, {U"Global", U"PlanckConstant"});
@@ -96,9 +98,11 @@ TEST_CASE("namespace search a function", "[Namespace]")
 
     Namespace *ns = namespaceFactory.Search(root, {U"A", U"B", U"C"});
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
-    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), "42", TypeCode::Int32);
-    Int32Type int32Type;
-    LambdaExpression funcDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"TargetFunction", &constant, {}, &int32Type,
+    ConstantExpression constant(SourceRange(sourceCodeFile, 0, 0, 0, 0), 42, TypeCode::Int32);
+    TypeSyntaxFactory typeSyntaxFactory;
+    TypeSyntax *int32Syntax =
+        typeSyntaxFactory.Create(SourceRange(sourceCodeFile, 0, 0, 0, 0), std::vector<std::u32string>{U"Int"}, {});
+    LambdaExpression funcDecl(SourceRange(sourceCodeFile, 0, 0, 0, 0), U"TargetFunction", &constant, {}, int32Syntax,
                               {});
     ns->Functions().AddItem(U"TargetFunction", &funcDecl);
     LambdaExpression *targetFunction = namespaceFactory.SearchFunction(root, {U"A", U"B", U"C", U"TargetFunction"});
@@ -122,16 +126,16 @@ TEST_CASE("namespace search a structure", "[Namespace]")
 
     Namespace *spiralNamespace = namespaceFactory.Search(root, {U"Universe", U"Galaxies", U"Spiral"});
     REQUIRE(spiralNamespace != nullptr);
-    StructureType type({U"Universe", U"Galaxies", U"Spiral", U"SpiralAttributes"}, {});
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
-    StructureExpression spiralAttributes(SourceRange(sourceCodeFile, 0, 0, 0, 0), &type, {});
+    std::vector<std::u32string> qualifiedName = {U"Universe", U"Galaxies", U"Spiral", U"SpiralAttributes"};
+    StructureExpression spiralAttributes(SourceRange(sourceCodeFile, 0, 0, 0, 0), qualifiedName, {});
     spiralNamespace->Structures().AddItem(U"SpiralAttributes", &spiralAttributes);
-    StructureExpression *structureDefinition = namespaceFactory.SearchStructure(root, type.QualifiedName());
+    StructureExpression *structureDefinition = namespaceFactory.SearchStructure(root, qualifiedName);
     REQUIRE(structureDefinition != nullptr);
-    REQUIRE(structureDefinition->GetType() == spiralAttributes.GetType());
+    REQUIRE(structureDefinition == &spiralAttributes);
     structureDefinition = namespaceFactory.SearchStructure(spiralNamespace, {U"SpiralAttributes"});
     REQUIRE(structureDefinition != nullptr);
-    REQUIRE(structureDefinition->GetType() == spiralAttributes.GetType());
+    REQUIRE(structureDefinition == &spiralAttributes);
 
     structureDefinition = namespaceFactory.SearchStructure(spiralNamespace, {U"SpiralFormation"});
     REQUIRE(structureDefinition == nullptr);

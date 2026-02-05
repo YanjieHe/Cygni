@@ -280,12 +280,13 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
     else if (node->NodeType() == ExpressionType::Convert)
     {
         Visit(node->Operand(), byteCode, constantPool);
+        const Type *targetType = typeChecker.GetType(node);
         switch (typeChecker.GetType(node->Operand())->GetTypeCode())
         {
         case TypeCode::Boolean:
         case TypeCode::Char:
         case TypeCode::Int32: {
-            switch (node->GetType()->GetTypeCode())
+            switch (targetType->GetTypeCode())
             {
             case TypeCode::Boolean:
             case TypeCode::Char:
@@ -311,7 +312,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
             break;
         }
         case TypeCode::Int64: {
-            switch (node->GetType()->GetTypeCode())
+            switch (targetType->GetTypeCode())
             {
             case TypeCode::Int32:
             case TypeCode::Boolean: {
@@ -336,7 +337,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
             break;
         }
         case TypeCode::Float32: {
-            switch (node->GetType()->GetTypeCode())
+            switch (targetType->GetTypeCode())
             {
             case TypeCode::Int32: {
                 byteCode.AddOp(OpCode::CAST_F32_TO_I32);
@@ -360,7 +361,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
             break;
         }
         case TypeCode::Float64: {
-            switch (node->GetType()->GetTypeCode())
+            switch (targetType->GetTypeCode())
             {
             case TypeCode::Int32: {
                 byteCode.AddOp(OpCode::CAST_F64_TO_I32);
@@ -400,7 +401,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
     switch (typeChecker.GetType(node)->GetTypeCode())
     {
     case TypeCode::Int32: {
-        int32_t value = std::any_cast<int32_t>(node->Value());
+        int32_t value = std::get<int32_t>(node->Value());
         if (value == 0)
         {
             byteCode.AddOp(OpCode::PUSH_I32_0);
@@ -429,7 +430,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
         break;
     }
     case TypeCode::Int64: {
-        int64_t value = std::any_cast<int64_t>(node->Value());
+        int64_t value = std::get<int64_t>(node->Value());
         if (value == 0)
         {
             byteCode.AddOp(OpCode::PUSH_I64_0);
@@ -447,7 +448,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
         break;
     }
     case TypeCode::Float32: {
-        float_t value = std::any_cast<float_t>(node->Value());
+        float_t value = std::get<float_t>(node->Value());
         if (value == 0.0)
         {
             byteCode.AddOp(OpCode::PUSH_F32_0);
@@ -465,7 +466,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
         break;
     }
     case TypeCode::Float64: {
-        double_t value = std::any_cast<double_t>(node->Value());
+        double_t value = std::get<double_t>(node->Value());
         if (value == 0.0)
         {
             byteCode.AddOp(OpCode::PUSH_F64_0);
@@ -483,7 +484,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
         break;
     }
     case TypeCode::Boolean: {
-        if (std::any_cast<bool>(node->Value()))
+        if (std::get<bool>(node->Value()))
         {
             byteCode.AddOp(OpCode::PUSH_I32_1);
         }
@@ -494,7 +495,7 @@ void Compiler::VisitConstant(const ConstantExpression *node, ByteCode &byteCode,
         break;
     }
     case TypeCode::String: {
-        std::u32string value = std::any_cast<std::u32string>(node->Value());
+        std::u32string value = std::get<std::u32string>(node->Value());
         byteCode.AddOp(OpCode::PUSH_STRING);
         byteCode.AddByte(static_cast<Byte>(constantPool.size()));
         constantPool.push_back(
@@ -718,7 +719,7 @@ void Compiler::VisitWhileLoop(const WhileLoopExpression *node, ByteCode &byteCod
 void Compiler::VisitDefault(const DefaultExpression *node, ByteCode &byteCode,
                             std::vector<flint_bytecode::Constant> &constantPool)
 {
-    switch (node->GetType()->GetTypeCode())
+    switch (typeChecker.GetType(node)->GetTypeCode())
     {
     case TypeCode::Char:
     case TypeCode::Boolean:
@@ -1104,7 +1105,9 @@ flint_bytecode::Function Compiler::CompileFunction(const std::string &name, cons
     }
     else
     {
-        switch (node->ReturnType()->GetTypeCode())
+        const auto *callableType = static_cast<const CallableType *>(typeChecker.GetType(node));
+        const Type *returnType = callableType->GetReturnType();
+        switch (returnType->GetTypeCode())
         {
         case TypeCode::Empty: {
             byteCode.AddOp(OpCode::RETURN);
@@ -1165,7 +1168,7 @@ flint_bytecode::NativeFunction Compiler::CompileNativeFunction(const std::string
                     else
                     {
                         foundLibraryName = true;
-                        libraryName = std::any_cast<std::u32string>(arg.Value());
+                        libraryName = std::get<std::u32string>(arg.Value());
                     }
                 }
                 else if (arg.Name() == U"EntryPoint")
@@ -1180,7 +1183,7 @@ flint_bytecode::NativeFunction Compiler::CompileNativeFunction(const std::string
                     else
                     {
                         foundEntryPoint = true;
-                        entryPoint = std::any_cast<std::u32string>(arg.Value());
+                        entryPoint = std::get<std::u32string>(arg.Value());
                     }
                 }
             }

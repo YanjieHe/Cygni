@@ -2,9 +2,12 @@
 #define CYGNI_EXPRESSIONS_EXPRESSION_HPP
 #include "Expressions/SourceRange.hpp"
 #include "Expressions/Type.hpp"
+#include "Utility/Assert.hpp"
 #include "Utility/OrderPreservingMap.hpp"
-#include <any>
+#include <cmath>
 #include <unordered_map>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace Cygni
@@ -56,6 +59,7 @@ class Expression
     explicit Expression(SourceRange sourceRange) : sourceRange{sourceRange}
     {
     }
+    virtual ~Expression() = default;
     const SourceRange &GetSourceRange() const
     {
         return sourceRange;
@@ -63,16 +67,89 @@ class Expression
     virtual ExpressionType NodeType() const = 0;
 };
 
+inline bool IsBinaryOperator(ExpressionType type)
+{
+    switch (type)
+    {
+    case ExpressionType::Add:
+    case ExpressionType::Subtract:
+    case ExpressionType::Multiply:
+    case ExpressionType::Divide:
+    case ExpressionType::Modulo:
+    case ExpressionType::And:
+    case ExpressionType::Or:
+    case ExpressionType::Equal:
+    case ExpressionType::NotEqual:
+    case ExpressionType::GreaterThan:
+    case ExpressionType::GreaterThanOrEqual:
+    case ExpressionType::LessThan:
+    case ExpressionType::LessThanOrEqual:
+    case ExpressionType::Assign:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool IsUnaryOperator(ExpressionType type)
+{
+    switch (type)
+    {
+    case ExpressionType::UnaryPlus:
+    case ExpressionType::UnaryMinus:
+    case ExpressionType::Not:
+    case ExpressionType::Convert:
+        return true;
+    default:
+        return false;
+    }
+}
+
+class TypeSyntax
+{
+  private:
+    SourceRange sourceRange;
+    std::vector<std::u32string> qualifiedName;
+    std::vector<TypeSyntax *> arguments;
+
+  public:
+    TypeSyntax(SourceRange sourceRange, const std::vector<std::u32string> &qualifiedName,
+               const std::vector<TypeSyntax *> &arguments)
+        : sourceRange{sourceRange}, qualifiedName{qualifiedName}, arguments{arguments}
+    {
+        CYGNI_ASSERT(!qualifiedName.empty(), "TypeSyntax must have at least one name segment");
+    }
+    virtual ~TypeSyntax() = default;
+
+    const SourceRange &GetSourceRange() const
+    {
+        return sourceRange;
+    }
+
+    const std::vector<std::u32string> &QualifiedName() const
+    {
+        return qualifiedName;
+    }
+
+    const std::vector<TypeSyntax *> &Arguments() const
+    {
+        return arguments;
+    }
+};
+
+using ConstantValue = std::variant<int32_t, int64_t, float_t, double_t, bool, char32_t, std::u32string>;
+
 class ConstantExpression : public Expression
 {
   private:
-    std::any value;
+    ConstantValue value;
     TypeCode typeCode;
 
   public:
-    ConstantExpression(SourceRange sourceRange, std::any value, TypeCode typeCode)
+    ConstantExpression(SourceRange sourceRange, ConstantValue value, TypeCode typeCode)
         : Expression(sourceRange), value{value}, typeCode{typeCode}
     {
+        CYGNI_ASSERT(Validate(typeCode), "Constant value type does not match the specified TypeCode");
     }
 
     ExpressionType NodeType() const override
@@ -80,7 +157,7 @@ class ConstantExpression : public Expression
         return ExpressionType::Constant;
     }
 
-    const std::any &Value() const
+    const ConstantValue &Value() const
     {
         return value;
     }
@@ -88,6 +165,36 @@ class ConstantExpression : public Expression
     TypeCode GetTypeCode() const
     {
         return typeCode;
+    }
+
+  private:
+    bool Validate(TypeCode typeCode)
+    {
+        return std::visit(
+            [&](auto &&v) -> bool {
+                using T = std::decay_t<decltype(v)>;
+
+                switch (typeCode)
+                {
+                case TypeCode::Int32:
+                    return std::is_same_v<T, int32_t>;
+                case TypeCode::Int64:
+                    return std::is_same_v<T, int64_t>;
+                case TypeCode::Float32:
+                    return std::is_same_v<T, float_t>;
+                case TypeCode::Float64:
+                    return std::is_same_v<T, double_t>;
+                case TypeCode::Boolean:
+                    return std::is_same_v<T, bool>;
+                case TypeCode::Char:
+                    return std::is_same_v<T, char32_t>;
+                case TypeCode::String:
+                    return std::is_same_v<T, std::u32string>;
+                default:
+                    return false;
+                }
+            },
+            value);
     }
 };
 
@@ -102,6 +209,8 @@ class BinaryExpression : public Expression
     BinaryExpression(SourceRange sourceRange, ExpressionType nodeType, Expression *left, Expression *right)
         : Expression(sourceRange), nodeType(nodeType), left(left), right(right)
     {
+        CYGNI_ASSERT(left && right, "BinaryExpression operands must not be null");
+        CYGNI_ASSERT(IsBinaryOperator(nodeType), "ExpressionType is not a binary operator");
     }
 
     ExpressionType NodeType() const override
@@ -109,12 +218,12 @@ class BinaryExpression : public Expression
         return nodeType;
     }
 
-    const Expression *Left() const
+    Expression *Left() const
     {
         return left;
     }
 
-    const Expression *Right() const
+    Expression *Right() const
     {
         return right;
     }
@@ -125,12 +234,14 @@ class UnaryExpression : public Expression
   private:
     ExpressionType nodeType;
     Expression *operand;
-    Type *type;
+    TypeSyntax *targetTypeSyntax;
 
   public:
-    UnaryExpression(SourceRange sourceRange, ExpressionType nodeType, Expression *operand, Type *type)
-        : Expression(sourceRange), nodeType(nodeType), operand(operand), type{type}
+    UnaryExpression(SourceRange sourceRange, ExpressionType nodeType, Expression *operand, TypeSyntax *targetTypeSyntax)
+        : Expression(sourceRange), nodeType(nodeType), operand(operand), targetTypeSyntax{targetTypeSyntax}
     {
+        CYGNI_ASSERT(operand, "UnaryExpression operand must not be null");
+        CYGNI_ASSERT(IsUnaryOperator(nodeType), "ExpressionType is not a unary operator");
     }
 
     ExpressionType NodeType() const override
@@ -138,14 +249,14 @@ class UnaryExpression : public Expression
         return nodeType;
     }
 
-    const Expression *Operand() const
+    Expression *Operand() const
     {
         return operand;
     }
 
-    const Type *GetType() const
+    const TypeSyntax *GetTargetTypeSyntax() const
     {
-        return type;
+        return targetTypeSyntax;
     }
 };
 
@@ -153,12 +264,13 @@ class ParameterExpression : public Expression
 {
   private:
     std::vector<std::u32string> qualifiedName;
-    Type *type;
+    TypeSyntax *typeSyntax;
 
   public:
-    ParameterExpression(SourceRange sourceRange, std::vector<std::u32string> qualifiedName, Type *type)
-        : Expression(sourceRange), qualifiedName(qualifiedName), type{type}
+    ParameterExpression(SourceRange sourceRange, std::vector<std::u32string> qualifiedName, TypeSyntax *typeSyntax)
+        : Expression(sourceRange), qualifiedName(qualifiedName), typeSyntax{typeSyntax}
     {
+        CYGNI_ASSERT(!qualifiedName.empty(), "ParameterExpression qualified name must not be empty");
     }
 
     ExpressionType NodeType() const override
@@ -176,9 +288,9 @@ class ParameterExpression : public Expression
         return qualifiedName.back();
     }
 
-    const Type *GetType() const
+    const TypeSyntax *GetTypeSyntax() const
     {
-        return type;
+        return typeSyntax;
     }
 };
 
@@ -186,13 +298,13 @@ class VariableDeclarationExpression : public Expression
 {
   private:
     std::u32string name;
-    Type *type;
+    TypeSyntax *typeSyntax;
     Expression *initializer;
 
   public:
-    VariableDeclarationExpression(SourceRange sourceRange, const std::u32string &name, Type *type,
+    VariableDeclarationExpression(SourceRange sourceRange, const std::u32string &name, TypeSyntax *typeSyntax,
                                   Expression *initializer)
-        : Expression(sourceRange), name{name}, type{type}, initializer{initializer}
+        : Expression(sourceRange), name{name}, typeSyntax{typeSyntax}, initializer{initializer}
     {
     }
 
@@ -206,14 +318,14 @@ class VariableDeclarationExpression : public Expression
         return name;
     }
 
-    const Expression *Initializer() const
+    Expression *Initializer() const
     {
         return initializer;
     }
 
-    const Type *GetType() const
+    const TypeSyntax *GetTypeSyntax() const
     {
-        return type;
+        return typeSyntax;
     }
 };
 
@@ -221,7 +333,6 @@ class BlockExpression : public Expression
 {
   private:
     std::vector<Expression *> expressions;
-    std::vector<ParameterExpression *> variables;
 
   public:
     BlockExpression(SourceRange sourceRange, const std::vector<Expression *> &expressions)
@@ -258,17 +369,17 @@ class ConditionalExpression : public Expression
         return ExpressionType::Conditional;
     }
 
-    const Expression *Test() const
+    Expression *Test() const
     {
         return test;
     }
 
-    const Expression *IfTrue() const
+    Expression *IfTrue() const
     {
         return ifTrue;
     }
 
-    const Expression *IfFalse() const
+    Expression *IfFalse() const
     {
         return ifFalse;
     }
@@ -291,7 +402,7 @@ class CallExpression : public Expression
         return ExpressionType::Call;
     }
 
-    const Expression *Function() const
+    Expression *Function() const
     {
         return function;
     }
@@ -302,16 +413,18 @@ class CallExpression : public Expression
     }
 };
 
+using AnnotationValue = std::variant<int32_t, int64_t, float_t, double_t, bool, char32_t, std::u32string>;
+
 class AnnotationArgument
 {
   private:
     std::u32string name;
-    std::any value;
+    AnnotationValue value;
 
   public:
     AnnotationArgument() = default;
 
-    AnnotationArgument(std::u32string name, std::any value) : name{name}, value{value}
+    AnnotationArgument(std::u32string name, AnnotationValue value) : name{name}, value{value}
     {
     }
 
@@ -320,7 +433,7 @@ class AnnotationArgument
         return name;
     }
 
-    const std::any &Value() const
+    const AnnotationValue &Value() const
     {
         return value;
     }
@@ -343,7 +456,7 @@ class Annotation
     {
         return name;
     }
-    const std::vector<AnnotationArgument> Arguments() const
+    const std::vector<AnnotationArgument> &Arguments() const
     {
         return arguments;
     }
@@ -353,14 +466,14 @@ class LambdaExpression : public Expression
 {
   private:
     std::u32string name;
-    const Expression *body;
+    Expression *body;
     std::vector<ParameterExpression *> parameters;
-    const Type *returnType;
+    TypeSyntax *returnType;
     std::vector<Annotation> annotations;
 
   public:
-    LambdaExpression(SourceRange sourceRange, std::u32string name, const Expression *body,
-                     const std::vector<ParameterExpression *> &parameters, const Type *returnType,
+    LambdaExpression(SourceRange sourceRange, std::u32string name, Expression *body,
+                     const std::vector<ParameterExpression *> &parameters, TypeSyntax *returnType,
                      std::vector<Annotation> annotations)
         : Expression(sourceRange), name{name}, body{body}, parameters{parameters}, returnType{returnType},
           annotations{annotations}
@@ -377,7 +490,7 @@ class LambdaExpression : public Expression
         return name;
     }
 
-    const Expression *Body() const
+    Expression *Body() const
     {
         return body;
     }
@@ -387,21 +500,9 @@ class LambdaExpression : public Expression
         return parameters;
     }
 
-    const Type *ReturnType() const
+    const TypeSyntax *ReturnTypeSyntax() const
     {
         return returnType;
-    }
-
-    CallableType *GetCallableType(TypeFactory &typeFactory) const
-    {
-        std::vector<const Type *> parameterTypes;
-        for (const auto &parameter : Parameters())
-        {
-            parameterTypes.push_back(parameter->GetType());
-        }
-        CallableType *callableType = typeFactory.CreateCallableType(parameterTypes, ReturnType());
-
-        return callableType;
     }
 
     const std::vector<Annotation> &Annotations() const
@@ -411,7 +512,7 @@ class LambdaExpression : public Expression
 
     bool IsNativeFunction() const
     {
-        for (auto annotation : Annotations())
+        for (const auto &annotation : Annotations())
         {
             if (annotation.Name() == U"External")
             {
@@ -441,12 +542,12 @@ class WhileLoopExpression : public Expression
         return ExpressionType::WhileLoop;
     }
 
-    const Expression *Condition() const
+    Expression *Condition() const
     {
         return condition;
     }
 
-    const Expression *Body() const
+    Expression *Body() const
     {
         return body;
     }
@@ -455,10 +556,10 @@ class WhileLoopExpression : public Expression
 class DefaultExpression : public Expression
 {
   private:
-    Type *type;
+    TypeSyntax *typeSyntax;
 
   public:
-    DefaultExpression(SourceRange sourceRange, Type *type) : Expression(sourceRange), type{type}
+    DefaultExpression(SourceRange sourceRange, TypeSyntax *typeSyntax) : Expression(sourceRange), typeSyntax{typeSyntax}
     {
     }
 
@@ -467,22 +568,22 @@ class DefaultExpression : public Expression
         return ExpressionType::Default;
     }
 
-    const Type *GetType() const
+    const TypeSyntax *GetTypeSyntax() const
     {
-        return type;
+        return typeSyntax;
     }
 };
 
 class NewExpression : public Expression
 {
   private:
-    Type *type;
+    TypeSyntax *typeSyntax;
     Utility::OrderPreservingMap<std::u32string, Expression *> fieldsInitialization;
 
   public:
-    NewExpression(SourceRange sourceRange, Type *type,
+    NewExpression(SourceRange sourceRange, TypeSyntax *typeSyntax,
                   Utility::OrderPreservingMap<std::u32string, Expression *> fieldsInitialization)
-        : Expression(sourceRange), type{type}, fieldsInitialization{fieldsInitialization}
+        : Expression(sourceRange), typeSyntax{typeSyntax}, fieldsInitialization{fieldsInitialization}
     {
     }
 
@@ -491,9 +592,9 @@ class NewExpression : public Expression
         return ExpressionType::New;
     }
 
-    const Type *GetType() const
+    const TypeSyntax *GetTypeSyntax() const
     {
-        return type;
+        return typeSyntax;
     }
 
     const Utility::OrderPreservingMap<std::u32string, Expression *> &FieldsInitialization() const
@@ -518,7 +619,7 @@ class MemberExpression : public Expression
     {
         return ExpressionType::MemberAccess;
     }
-    const Expression *GetExpression() const
+    Expression *GetExpression() const
     {
         return expression;
     }
@@ -531,25 +632,27 @@ class MemberExpression : public Expression
 class StructureExpression : public Expression
 {
   private:
-    StructureType *type;
-    Utility::OrderPreservingMap<std::u32string, const Type *> fields;
+    std::vector<std::u32string> qualifiedName;
+    Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields;
 
   public:
-    StructureExpression(SourceRange sourceRange, StructureType *type,
-                        const Utility::OrderPreservingMap<std::u32string, const Type *> &fields)
-        : Expression(sourceRange), type{type}, fields{fields}
+    StructureExpression(SourceRange sourceRange, const std::vector<std::u32string> qualifiedName,
+                        Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields)
+        : Expression(sourceRange), qualifiedName{std::move(qualifiedName)}, fields{std::move(fields)}
     {
     }
 
     ExpressionType NodeType() const override
     {
-        return ExpressionType::New;
+        return ExpressionType::StructureDefinition;
     }
-    const StructureType *GetType() const
+
+    const std::vector<std::u32string> &QualifiedName() const
     {
-        return type;
+        return qualifiedName;
     }
-    const Utility::OrderPreservingMap<std::u32string, const Type *> &Fields() const
+
+    const Utility::OrderPreservingMap<std::u32string, TypeSyntax *> &Fields() const
     {
         return fields;
     }
@@ -573,7 +676,35 @@ class ExpressionFactory
     template <typename TExpression, typename... ArgTypes>
     TExpression *Create(ArgTypes... arguments)
     {
+        static_assert(std::is_base_of_v<Expression, TExpression>, "ExpressionFactory can only create Expression nodes");
         auto node = new TExpression(arguments...);
+        nodes.push_back(node);
+        return node;
+    }
+};
+
+class TypeSyntaxFactory
+{
+  private:
+    std::vector<TypeSyntax *> nodes;
+
+  public:
+    TypeSyntaxFactory() = default;
+    TypeSyntaxFactory(const TypeSyntaxFactory &) = delete;
+
+    ~TypeSyntaxFactory()
+    {
+        for (auto *node : nodes)
+        {
+            delete node;
+        }
+    }
+
+    TypeSyntax *Create(SourceRange sourceRange, std::vector<std::u32string> qualifiedName,
+                       std::vector<TypeSyntax *> arguments)
+    {
+        auto *node = new TypeSyntax(sourceRange, std::move(qualifiedName), std::move(arguments));
+
         nodes.push_back(node);
         return node;
     }

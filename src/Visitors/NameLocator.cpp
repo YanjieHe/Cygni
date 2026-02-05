@@ -221,33 +221,29 @@ void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
 }
 void NameLocator::VisitNew(const NewExpression *node, Scope<NameInfo> *scope)
 {
-    if (node->GetType()->GetTypeCode() == TypeCode::Structure)
+    const TypeSyntax *typeSyntax = node->GetTypeSyntax();
+    if (typeSyntax == nullptr)
     {
-        const StructureType *structureType = static_cast<const StructureType *>(node->GetType());
-        Namespace *top = namespaceStack.top();
-        StructureExpression *structureDefinition =
-            namespaceFactory.SearchStructure(top, structureType->QualifiedName());
-        if (structureDefinition != nullptr)
-        {
-            const NameInfo &nameInfo = GetNameInfo(structureDefinition, LocationKind::Structure);
-            Register(node, NameInfo(LocationKind::Structure, nameInfo.Number()));
-            for (Expression *value : node->FieldsInitialization().GetAllItems())
-            {
-                Visit(value, scope);
-            }
-        }
-        else
-        {
-            spdlog::error("The structure being initialized is not defined.");
+        spdlog::error("The new expression is missing a type annotation.");
+        throw TreeException(__FILE__, __LINE__, "The new expression should initialize a structure.", node, nullptr);
+    }
 
-            throw TreeException(__FILE__, __LINE__, "The structure being initialized is not defined.", node, nullptr);
+    Namespace *top = namespaceStack.top();
+    StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, typeSyntax->QualifiedName());
+    if (structureDefinition != nullptr)
+    {
+        const NameInfo &nameInfo = GetNameInfo(structureDefinition, LocationKind::Structure);
+        Register(node, NameInfo(LocationKind::Structure, nameInfo.Number()));
+        for (Expression *value : node->FieldsInitialization().GetAllItems())
+        {
+            Visit(value, scope);
         }
     }
     else
     {
-        spdlog::error("The new expression should initialize a structure.");
+        spdlog::error("The structure being initialized is not defined.");
 
-        throw TreeException(__FILE__, __LINE__, "The new expression should initialize a structure", node, nullptr);
+        throw TreeException(__FILE__, __LINE__, "The structure being initialized is not defined.", node, nullptr);
     }
 }
 

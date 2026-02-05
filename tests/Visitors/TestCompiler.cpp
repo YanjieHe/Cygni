@@ -7,7 +7,6 @@
 #include "Visitors/TypeChecker.hpp"
 
 #include "Utility/UTF32Functions.hpp"
-#include <iostream>
 
 using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
