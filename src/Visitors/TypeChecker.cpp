@@ -52,6 +52,44 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
                 throw TreeException(__FILE__, __LINE__, "member assignment type mismatch error.", node, nullptr);
             }
         }
+        else if (node->Left()->NodeType() == ExpressionType::Call)
+        {
+            const CallExpression *callExpression = static_cast<const CallExpression *>(node->Left());
+            const Type *functionType = Visit(callExpression->Function(), scope);
+            if (functionType->GetTypeCode() == TypeCode::Array)
+            {
+                const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
+                if (callExpression->Arguments().size() != 1)
+                {
+                    throw TreeException(__FILE__, __LINE__, "array assignment must have exactly one index argument.",
+                                        node, nullptr);
+                }
+                else
+                {
+                    const Type *indexType = Visit(callExpression->Arguments().front(), scope);
+                    if (indexType->GetTypeCode() != TypeCode::Int32)
+                    {
+                        throw TreeException(__FILE__, __LINE__, "array index type must be Int32.", node, nullptr);
+                    }
+                }
+                if (TypeFactory::AreTypesEqual(arrayType->ElementType(), right))
+                {
+                    return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+                }
+                else
+                {
+                    throw TreeException(__FILE__, __LINE__, "array element assignment type mismatch error.", node,
+                                        nullptr);
+                }
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "The left-hand side of the assignment is a call expression, but it's not an array "
+                                    "access. It is currently not supported.",
+                                    node, nullptr);
+            }
+        }
         else
         {
             spdlog::error("Unsupported left side in assignment. Expected a parameter, but got: {}",
@@ -342,6 +380,26 @@ const Type *TypeChecker::VisitCall(const CallExpression *node, Scope<const Type 
         else
         {
             throw TreeException(__FILE__, __LINE__, "argument size mismatch error.", node, nullptr);
+        }
+    }
+    else if (callableType->GetTypeCode() == TypeCode::Array)
+    {
+        auto arrayType = static_cast<const ArrayType *>(callableType);
+        if (node->Arguments().size() == 1)
+        {
+            auto indexType = Visit(node->Arguments().front(), scope);
+            if (indexType->GetTypeCode() == TypeCode::Int32)
+            {
+                return Register(node, arrayType->ElementType());
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__, "Array index must be of type Int32.", node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__, "Array access must have exactly one argument.", node, nullptr);
         }
     }
     else

@@ -42,12 +42,13 @@ enum class ExpressionType
     NotEqual = 22,
     Or = 23,
     Parameter = 24,
-    StructureDefinition = 25,
+    StructureDeclaration = 25,
     Subtract = 26,
     UnaryMinus = 27,
     UnaryPlus = 28,
     VariableDeclaration = 29,
-    WhileLoop = 30
+    WhileLoop = 30,
+    InterfaceDeclaration = 31
 };
 
 class Expression
@@ -636,15 +637,15 @@ class StructureExpression : public Expression
     Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields;
 
   public:
-    StructureExpression(SourceRange sourceRange, const std::vector<std::u32string> qualifiedName,
-                        Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields)
-        : Expression(sourceRange), qualifiedName{std::move(qualifiedName)}, fields{std::move(fields)}
+    StructureExpression(SourceRange sourceRange, const std::vector<std::u32string> &qualifiedName,
+                        const Utility::OrderPreservingMap<std::u32string, TypeSyntax *> &fields)
+        : Expression(sourceRange), qualifiedName{qualifiedName}, fields{fields}
     {
     }
 
     ExpressionType NodeType() const override
     {
-        return ExpressionType::StructureDefinition;
+        return ExpressionType::StructureDeclaration;
     }
 
     const std::vector<std::u32string> &QualifiedName() const
@@ -655,6 +656,35 @@ class StructureExpression : public Expression
     const Utility::OrderPreservingMap<std::u32string, TypeSyntax *> &Fields() const
     {
         return fields;
+    }
+};
+
+class InterfaceExpression : public Expression
+{
+  private:
+    std::vector<std::u32string> qualifiedName;
+    Utility::OrderPreservingMap<std::u32string, LambdaExpression *> methods;
+
+  public:
+    InterfaceExpression(SourceRange sourceRange, const std::vector<std::u32string> qualifiedName,
+                        const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &methods)
+        : Expression(sourceRange), qualifiedName{qualifiedName}, methods{methods}
+    {
+    }
+
+    ExpressionType NodeType() const override
+    {
+        return ExpressionType::InterfaceDeclaration;
+    }
+
+    const std::vector<std::u32string> &QualifiedName() const
+    {
+        return qualifiedName;
+    }
+
+    const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &Methods() const
+    {
+        return methods;
     }
 };
 

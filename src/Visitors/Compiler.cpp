@@ -542,6 +542,7 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
         }
         case TypeCode::String:
         case TypeCode::Structure:
+        case TypeCode::Array:
         case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_LOCAL_OBJECT);
             byteCode.AddByte(nameInfo.Number());
@@ -584,6 +585,7 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
         }
         case TypeCode::String:
         case TypeCode::Structure:
+        case TypeCode::Array:
         case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_GLOBAL_OBJECT);
             byteCode.AddByte(constantPoolIndex);
@@ -650,45 +652,91 @@ void Compiler::VisitConditional(const ConditionalExpression *node, ByteCode &byt
 void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
                          std::vector<flint_bytecode::Constant> &constantPool)
 {
-    for (const Expression *argument : node->Arguments())
+    const Type *functionType = typeChecker.GetType(node->Function());
+    if (functionType->GetTypeCode() == TypeCode::Array)
     {
-        Visit(argument, byteCode, constantPool);
-    }
-    if (node->Function()->NodeType() == ExpressionType::Parameter)
-    {
-        if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
+        Visit(node->Function(), byteCode, constantPool);
+        for (const Expression *argument : node->Arguments())
         {
-            const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
-            byteCode.AddOp(OpCode::INVOKE_FUNCTION);
-            byteCode.AddByte(constantPool.size());
-            constantPool.push_back(
-                flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+            Visit(argument, byteCode, constantPool);
         }
-        else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
+        const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
+        switch (arrayType->ElementType()->GetTypeCode())
         {
-            const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
-            byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
-            byteCode.AddByte(constantPool.size());
-            constantPool.push_back(flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION,
-                                                            nameInfo.Number()));
+        case TypeCode::Boolean:
+        case TypeCode::Char:
+        case TypeCode::Int32: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_I32);
+            break;
         }
-        else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
-        {
-            Visit(node->Function(), byteCode, constantPool);
-            byteCode.AddOp(OpCode::INVOKE_CLOSURE);
+        case TypeCode::Int64: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_I64);
+            break;
         }
-        else
-        {
-            spdlog::error("Unsupported call expression location kind.");
-            throw std::runtime_error("Unsupported call expression location kind.");
+        case TypeCode::Float32: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_F32);
+            break;
+        }
+        case TypeCode::Float64: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_F64);
+            break;
+        }
+        case TypeCode::String:
+        case TypeCode::Structure:
+        case TypeCode::Callable:
+        case TypeCode::Array: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_OBJECT);
+            break;
+        }
+        default: {
+            spdlog::error("Unsupported array element type for array access.");
+
+            throw std::runtime_error("Unsupported array element type for array access.");
+        }
         }
     }
     else
     {
-        spdlog::error("Unsupported call expression type. Got node type: {}",
-                      Utility::EnumToString(node->Function()->NodeType()));
+        for (const Expression *argument : node->Arguments())
+        {
+            Visit(argument, byteCode, constantPool);
+        }
+        if (node->Function()->NodeType() == ExpressionType::Parameter)
+        {
+            if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
+            {
+                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
+                byteCode.AddOp(OpCode::INVOKE_FUNCTION);
+                byteCode.AddByte(constantPool.size());
+                constantPool.push_back(
+                    flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+            }
+            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
+            {
+                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
+                byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
+                byteCode.AddByte(constantPool.size());
+                constantPool.push_back(flint_bytecode::Constant(
+                    flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION, nameInfo.Number()));
+            }
+            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
+            {
+                Visit(node->Function(), byteCode, constantPool);
+                byteCode.AddOp(OpCode::INVOKE_CLOSURE);
+            }
+            else
+            {
+                spdlog::error("Unsupported call expression location kind.");
+                throw std::runtime_error("Unsupported call expression location kind.");
+            }
+        }
+        else
+        {
+            spdlog::error("Unsupported call expression type. Got node type: {}",
+                          Utility::EnumToString(node->Function()->NodeType()));
 
-        throw std::runtime_error("Unsupported call expression type");
+            throw std::runtime_error("Unsupported call expression type");
+        }
     }
 }
 
@@ -917,176 +965,235 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
 void Compiler::CompileAssignment(const BinaryExpression *node, ByteCode &byteCode,
                                  std::vector<flint_bytecode::Constant> &constantPool)
 {
-    TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
-    if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode())
+    if (node->Left()->NodeType() == ExpressionType::Call)
     {
-        spdlog::error("Assignment type mismatch.");
+        auto callExpression = static_cast<const CallExpression *>(node->Left());
+        const Type *functionType = typeChecker.GetType(callExpression->Function());
+        if (functionType->GetTypeCode() == TypeCode::Array)
+        {
+            Visit(callExpression->Function(), byteCode, constantPool);
+            Visit(callExpression->Arguments().front(), byteCode, constantPool);
+            Visit(node->Right(), byteCode, constantPool);
 
-        throw TreeException(__FILE__, __LINE__, "Assignment type mismatch.", static_cast<const Expression *>(node),
-                            nullptr);
+            const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
+            switch (arrayType->ElementType()->GetTypeCode())
+            {
+            case TypeCode::Boolean:
+            case TypeCode::Char:
+            case TypeCode::Int32: {
+                byteCode.AddOp(OpCode::POP_ARRAY_I32);
+                break;
+            }
+            case TypeCode::Int64: {
+                byteCode.AddOp(OpCode::POP_ARRAY_I64);
+                break;
+            }
+            case TypeCode::Float32: {
+                byteCode.AddOp(OpCode::POP_ARRAY_F32);
+                break;
+            }
+            case TypeCode::Float64: {
+                byteCode.AddOp(OpCode::POP_ARRAY_F64);
+                break;
+            }
+            case TypeCode::String:
+            case TypeCode::Structure:
+            case TypeCode::Callable:
+            case TypeCode::Array: {
+                byteCode.AddOp(OpCode::POP_ARRAY_OBJECT);
+                break;
+            }
+            default: {
+                spdlog::error("Unsupported array element type for array assignment.");
+
+                throw std::runtime_error("Unsupported array element type for array assignment.");
+            }
+            }
+        }
+        else
+        {
+            throw std::runtime_error("The left-hand side of the assignment is a call expression, but it's not an array "
+                                     "access. It is currently not supported.");
+        }
     }
     else
     {
-        Visit(node->Right(), byteCode, constantPool);
-        if (node->Left()->NodeType() == ExpressionType::Parameter)
+        TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
+        if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode())
         {
-            if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::FunctionVariable))
-            {
-                NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::FunctionVariable);
-                int offset = nameInfo.Number();
-                switch (typeCode)
-                {
-                case TypeCode::Boolean:
-                case TypeCode::Char:
-                case TypeCode::Int32: {
-                    byteCode.AddOp(OpCode::POP_LOCAL_I32);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Int64: {
-                    byteCode.AddOp(OpCode::POP_LOCAL_I64);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Float32: {
-                    byteCode.AddOp(OpCode::POP_LOCAL_F32);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Float64: {
-                    byteCode.AddOp(OpCode::POP_LOCAL_F64);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::String:
-                case TypeCode::Structure: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_F64);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                default: {
-                    spdlog::error("Assignment to the local variable of this type is not supported.");
+            spdlog::error("Assignment type mismatch.");
 
-                    throw CompilationException(__FILE__, __LINE__,
-                                               "Assignment to the local variable of this type is not supported.",
-                                               static_cast<const Expression *>(node), nullptr);
-                }
-                }
-            }
-            else if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::GlobalVariable))
-            {
-                NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::GlobalVariable);
-                int offset = nameInfo.Number();
-                switch (typeCode)
-                {
-                case TypeCode::Boolean:
-                case TypeCode::Char:
-                case TypeCode::Int32: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_I32);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Int64: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_I64);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Float32: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_F32);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::Float64: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_F64);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                case TypeCode::String:
-                case TypeCode::Structure: {
-                    byteCode.AddOp(OpCode::POP_GLOBAL_OBJECT);
-                    byteCode.AddByte(static_cast<Byte>(offset));
-                    break;
-                }
-                default: {
-                    spdlog::error("Assignment to the global variable of this type is not supported.");
-
-                    throw CompilationException(__FILE__, __LINE__,
-                                               "Assignment to the global variable of this type is not supported.",
-                                               static_cast<const Expression *>(node), nullptr);
-                }
-                }
-            }
-            else
-            {
-                spdlog::error("Assignments only work for variables and structure fields.");
-
-                throw CompilationException(__FILE__, __LINE__,
-                                           "Assignments only work for variables and structure fields.", node, nullptr);
-            }
+            throw TreeException(__FILE__, __LINE__, "Assignment type mismatch.", static_cast<const Expression *>(node),
+                                nullptr);
         }
-        else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
+        else
         {
-            const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Left());
-            Visit(memberAccess->GetExpression(), byteCode, constantPool);
             Visit(node->Right(), byteCode, constantPool);
-            const Type *type = typeChecker.GetType(memberAccess->GetExpression());
-            if (type->GetTypeCode() == TypeCode::Structure)
+            if (node->Left()->NodeType() == ExpressionType::Parameter)
             {
-                const StructureType *structureType = static_cast<const StructureType *>(type);
-                if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
+                if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::FunctionVariable))
                 {
-                    size_t index = structureType->Fields().GetIndexByKey(memberAccess->FieldName());
-                    const Type *fieldType = structureType->Fields().GetItemByIndex(index);
-                    switch (fieldType->GetTypeCode())
+                    NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::FunctionVariable);
+                    int offset = nameInfo.Number();
+                    switch (typeCode)
                     {
                     case TypeCode::Boolean:
                     case TypeCode::Char:
                     case TypeCode::Int32: {
-                        byteCode.AddOp(OpCode::POP_FIELD_I32);
-                        byteCode.AddByte(static_cast<Byte>(index));
+                        byteCode.AddOp(OpCode::POP_LOCAL_I32);
+                        byteCode.AddByte(static_cast<Byte>(offset));
                         break;
                     }
                     case TypeCode::Int64: {
-                        byteCode.AddOp(OpCode::POP_FIELD_I64);
-                        byteCode.AddByte(static_cast<Byte>(index));
+                        byteCode.AddOp(OpCode::POP_LOCAL_I64);
+                        byteCode.AddByte(static_cast<Byte>(offset));
                         break;
                     }
                     case TypeCode::Float32: {
-                        byteCode.AddOp(OpCode::POP_FIELD_F32);
-                        byteCode.AddByte(static_cast<Byte>(index));
+                        byteCode.AddOp(OpCode::POP_LOCAL_F32);
+                        byteCode.AddByte(static_cast<Byte>(offset));
                         break;
                     }
                     case TypeCode::Float64: {
-                        byteCode.AddOp(OpCode::POP_FIELD_F64);
-                        byteCode.AddByte(static_cast<Byte>(index));
+                        byteCode.AddOp(OpCode::POP_LOCAL_F64);
+                        byteCode.AddByte(static_cast<Byte>(offset));
                         break;
                     }
                     case TypeCode::String:
-                    case TypeCode::Structure: {
-                        byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
-                        byteCode.AddByte(static_cast<Byte>(index));
+                    case TypeCode::Structure:
+                    case TypeCode::Array:
+                    case TypeCode::Callable: {
+                        byteCode.AddOp(OpCode::POP_LOCAL_OBJECT);
+                        byteCode.AddByte(static_cast<Byte>(offset));
                         break;
                     }
                     default: {
-                        spdlog::error("Unsupported field type: '{}'.", Utility::EnumToString(fieldType->GetTypeCode()));
+                        spdlog::error("Assignment to the local variable of this type is not supported.");
 
-                        throw CompilationException(__FILE__, __LINE__, "Unsupported field type", node, nullptr);
+                        throw CompilationException(__FILE__, __LINE__,
+                                                   "Assignment to the local variable of this type is not supported.",
+                                                   static_cast<const Expression *>(node), nullptr);
+                    }
+                    }
+                }
+                else if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::GlobalVariable))
+                {
+                    NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::GlobalVariable);
+                    int offset = nameInfo.Number();
+                    switch (typeCode)
+                    {
+                    case TypeCode::Boolean:
+                    case TypeCode::Char:
+                    case TypeCode::Int32: {
+                        byteCode.AddOp(OpCode::POP_GLOBAL_I32);
+                        byteCode.AddByte(static_cast<Byte>(offset));
+                        break;
+                    }
+                    case TypeCode::Int64: {
+                        byteCode.AddOp(OpCode::POP_GLOBAL_I64);
+                        byteCode.AddByte(static_cast<Byte>(offset));
+                        break;
+                    }
+                    case TypeCode::Float32: {
+                        byteCode.AddOp(OpCode::POP_GLOBAL_F32);
+                        byteCode.AddByte(static_cast<Byte>(offset));
+                        break;
+                    }
+                    case TypeCode::Float64: {
+                        byteCode.AddOp(OpCode::POP_GLOBAL_F64);
+                        byteCode.AddByte(static_cast<Byte>(offset));
+                        break;
+                    }
+                    case TypeCode::String:
+                    case TypeCode::Structure:
+                    case TypeCode::Array:
+                    case TypeCode::Callable: {
+                        byteCode.AddOp(OpCode::POP_GLOBAL_OBJECT);
+                        byteCode.AddByte(static_cast<Byte>(offset));
+                        break;
+                    }
+                    default: {
+                        spdlog::error("Assignment to the global variable of this type is not supported.");
+
+                        throw CompilationException(__FILE__, __LINE__,
+                                                   "Assignment to the global variable of this type is not supported.",
+                                                   static_cast<const Expression *>(node), nullptr);
                     }
                     }
                 }
                 else
                 {
-                    spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(memberAccess->FieldName()));
+                    spdlog::error("Assignments only work for variables and structure fields.");
 
-                    throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
+                    throw CompilationException(
+                        __FILE__, __LINE__, "Assignments only work for variables and structure fields.", node, nullptr);
                 }
             }
-            else
+            else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
             {
-                spdlog::error("Assignments only work for variables and structure fields.");
+                const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Left());
+                Visit(memberAccess->GetExpression(), byteCode, constantPool);
+                Visit(node->Right(), byteCode, constantPool);
+                const Type *type = typeChecker.GetType(memberAccess->GetExpression());
+                if (type->GetTypeCode() == TypeCode::Structure)
+                {
+                    const StructureType *structureType = static_cast<const StructureType *>(type);
+                    if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
+                    {
+                        size_t index = structureType->Fields().GetIndexByKey(memberAccess->FieldName());
+                        const Type *fieldType = structureType->Fields().GetItemByIndex(index);
+                        switch (fieldType->GetTypeCode())
+                        {
+                        case TypeCode::Boolean:
+                        case TypeCode::Char:
+                        case TypeCode::Int32: {
+                            byteCode.AddOp(OpCode::POP_FIELD_I32);
+                            byteCode.AddByte(static_cast<Byte>(index));
+                            break;
+                        }
+                        case TypeCode::Int64: {
+                            byteCode.AddOp(OpCode::POP_FIELD_I64);
+                            byteCode.AddByte(static_cast<Byte>(index));
+                            break;
+                        }
+                        case TypeCode::Float32: {
+                            byteCode.AddOp(OpCode::POP_FIELD_F32);
+                            byteCode.AddByte(static_cast<Byte>(index));
+                            break;
+                        }
+                        case TypeCode::Float64: {
+                            byteCode.AddOp(OpCode::POP_FIELD_F64);
+                            byteCode.AddByte(static_cast<Byte>(index));
+                            break;
+                        }
+                        case TypeCode::String:
+                        case TypeCode::Structure: {
+                            byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
+                            byteCode.AddByte(static_cast<Byte>(index));
+                            break;
+                        }
+                        default: {
+                            spdlog::error("Unsupported field type: '{}'.",
+                                          Utility::EnumToString(fieldType->GetTypeCode()));
 
-                throw CompilationException(__FILE__, __LINE__,
-                                           "Assignments only work for variables and structure fields.", node, nullptr);
+                            throw CompilationException(__FILE__, __LINE__, "Unsupported field type", node, nullptr);
+                        }
+                        }
+                    }
+                    else
+                    {
+                        spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(memberAccess->FieldName()));
+
+                        throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
+                    }
+                }
+                else
+                {
+                    spdlog::error("Assignments only work for variables and structure fields.");
+
+                    throw CompilationException(
+                        __FILE__, __LINE__, "Assignments only work for variables and structure fields.", node, nullptr);
+                }
             }
         }
     }
@@ -1369,4 +1476,4 @@ void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode
                                 byteCode.GetBytes().begin() + location2);
 }
 }; /* namespace Visitors */
-}; /* namespace Cygni */
+}; // namespace Cygni
