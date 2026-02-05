@@ -205,9 +205,9 @@ bool TypeFactory::AreOrderedTypesEqual(const std::vector<const Type *> &a, const
 
 StructureType *TypeFactory::CreateStructureType(const std::vector<std::u32string> &qualifiedName,
                                                 const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
-                                                const std::vector<const InterfaceType *> &implementedInterfaces)
+                                                const std::vector<const InterfaceType *> &interfaces)
 {
-    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, implementedInterfaces)));
+    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, interfaces)));
 }
 
 bool TypeFactory::AreUnorderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b)

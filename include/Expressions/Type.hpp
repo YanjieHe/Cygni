@@ -156,13 +156,13 @@ class StructureType : public Type
   private:
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, const Type *> fields;
-    std::vector<const InterfaceType *> implementedInterfaces;
+    std::vector<const InterfaceType *> interfaces;
 
   public:
     StructureType(const std::vector<std::u32string> &qualifiedName,
                   const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
-                  const std::vector<const InterfaceType *> &implementedInterfaces)
-        : qualifiedName{qualifiedName}, fields{fields}, implementedInterfaces{implementedInterfaces}
+                  const std::vector<const InterfaceType *> &interfaces)
+        : qualifiedName{qualifiedName}, fields{fields}, interfaces{interfaces}
     {
     }
 
@@ -181,9 +181,9 @@ class StructureType : public Type
         return fields;
     }
 
-    const std::vector<const InterfaceType *> &ImplementedInterfaces() const
+    const std::vector<const InterfaceType *> &Interfaces() const
     {
-        return implementedInterfaces;
+        return interfaces;
     }
 };
 

@@ -786,7 +786,7 @@ StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *stru
         resolvedFields.AddItem(fieldName, ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(fieldName)));
     }
 
-    /* TODO: resolve implemented interfaces */
+    /* TODO: resolve interfaces */
     return Types.CreateStructureType(structureDefinition->QualifiedName(), resolvedFields, {});
 }
 
