@@ -1,10 +1,11 @@
 #include "CLI/CLI11.hpp"
+#include "Compilation/CompilationContext.hpp"
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
 #include "SyntaxAnalysis/ParserException.hpp"
 #include "Utility/UTF32Functions.hpp"
-#include "Visitors/Compiler.hpp"
 #include "Visitors/CompilationException.hpp"
+#include "Visitors/Compiler.hpp"
 #include "Visitors/ExpressionJsonSerializer.hpp"
 #include "Visitors/NameLocator.hpp"
 #include "Visitors/TypeChecker.hpp"
@@ -16,6 +17,7 @@ using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 using namespace Cygni::Visitors;
 using namespace Cygni::Utility;
+using namespace Cygni::Compilation;
 
 void Compile(std::string sourceFilePath, std::string targetFilePath)
 {
@@ -36,7 +38,8 @@ void Compile(std::string sourceFilePath, std::string targetFilePath)
 
         std::vector<Token> tokens = lexer.ReadAll();
 
-        Parser parser(tokens, sourceCodeFile);
+        CompilationContext compilationContext;
+        Parser parser(tokens, sourceCodeFile, compilationContext);
         parser.ParseNamespace();
 
         TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());

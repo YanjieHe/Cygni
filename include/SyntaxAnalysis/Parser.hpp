@@ -1,6 +1,7 @@
 #ifndef CYGNI_EXPRESSIONS_PARSER_HPP
 #define CYGNI_EXPRESSIONS_PARSER_HPP
 
+#include "Compilation/CompilationContext.hpp"
 #include "Expressions/Expression.hpp"
 #include "Expressions/Namespace.hpp"
 #include "Expressions/SourceRange.hpp"
@@ -25,13 +26,12 @@ class Parser
     std::vector<Token> tokens;
     std::shared_ptr<LexicalAnalysis::SourceCodeFile> document;
     int offset;
-    Expressions::ExpressionFactory expressionFactory;
-    Expressions::TypeSyntaxFactory typeSyntaxFactory;
-    Expressions::NamespaceFactory namespaceFactory;
+    Compilation::CompilationContext &compilationContext;
     std::stack<Expressions::Namespace *> namespaceStack;
 
   public:
-    Parser(std::vector<Token> tokens, std::shared_ptr<LexicalAnalysis::SourceCodeFile> document);
+    Parser(std::vector<Token> tokens, std::shared_ptr<LexicalAnalysis::SourceCodeFile> document,
+           Compilation::CompilationContext &compilationContext);
 
     inline bool IsEof() const
     {
@@ -60,14 +60,19 @@ class Parser
         return Expressions::SourceRange{document, token.line, Look().line, token.column, Look().column};
     }
 
-    Expressions::NamespaceFactory &GetNamespaceFactory()
+    NamespaceFactory &GetNamespaceFactory()
     {
-        return namespaceFactory;
+        return compilationContext.GetNamespaceFactory();
     }
 
-    Expressions::ExpressionFactory &GetExpressionFactory()
+    ExpressionFactory &GetExpressionFactory()
     {
-        return expressionFactory;
+        return compilationContext.GetExpressionFactory();
+    }
+
+    TypeSyntaxFactory &GetTypeSyntaxFactory()
+    {
+        return compilationContext.GetTypeSyntaxFactory();
     }
 
     ExpPtr Statement();

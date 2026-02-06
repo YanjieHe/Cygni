@@ -23,10 +23,11 @@ using namespace Expressions;
 
 using Utility::Format;
 
-Parser::Parser(std::vector<Token> tokens, std::shared_ptr<SourceCodeFile> document)
-    : tokens{tokens}, document{document}, offset{0}
+Parser::Parser(std::vector<Token> tokens, std::shared_ptr<SourceCodeFile> document,
+               Compilation::CompilationContext &compilationContext)
+    : tokens{tokens}, document{document}, offset{0}, compilationContext{compilationContext}
 {
-    namespaceStack.push(namespaceFactory.GetRoot());
+    namespaceStack.push(GetNamespaceFactory().GetRoot());
 }
 
 const Token &Parser::Match(TokenTag tag)
@@ -80,7 +81,7 @@ ExpPtr Parser::ParseAssign()
     {
         Match(TokenTag::Assign);
         auto y = ParseOr();
-        return expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Assign, x, y);
+        return GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Assign, x, y);
     }
     else
     {
@@ -96,7 +97,7 @@ ExpPtr Parser::ParseOr()
     {
         Match(TokenTag::Or);
         auto y = ParseAnd();
-        x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Or, x, y);
+        x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Or, x, y);
     }
     return x;
 }
@@ -109,7 +110,7 @@ ExpPtr Parser::ParseAnd()
     {
         Match(TokenTag::And);
         auto y = ParseNot();
-        x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::And, x, y);
+        x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::And, x, y);
     }
     return x;
 }
@@ -121,7 +122,7 @@ ExpPtr Parser::ParseNot()
     {
         Match(TokenTag::Not);
         auto x = ParseEquality();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
+        return GetExpressionFactory().Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
     }
     else
     {
@@ -140,11 +141,11 @@ ExpPtr Parser::ParseEquality()
         auto y = ParseRelation();
         if (t.tag == TokenTag::Equal)
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Equal, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Equal, x, y);
         }
         else
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::NotEqual, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::NotEqual, x, y);
         }
     }
     return x;
@@ -162,19 +163,20 @@ ExpPtr Parser::ParseRelation()
         auto y = ParseExpr();
         if (t.tag == TokenTag::GreaterThan)
         {
-            return expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::GreaterThan, x, y);
+            return GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::GreaterThan, x, y);
         }
         else if (t.tag == TokenTag::LessThan)
         {
-            return expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::LessThan, x, y);
+            return GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::LessThan, x, y);
         }
         else if (t.tag == TokenTag::GreaterThanOrEqual)
         {
-            return expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::GreaterThanOrEqual, x, y);
+            return GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::GreaterThanOrEqual, x,
+                                                                   y);
         }
         else
         {
-            return expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::LessThanOrEqual, x, y);
+            return GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::LessThanOrEqual, x, y);
         }
     }
     else
@@ -194,11 +196,11 @@ ExpPtr Parser::ParseExpr()
         auto y = ParseTerm();
         if (t.tag == TokenTag::Add)
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Add, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Add, x, y);
         }
         else
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Subtract, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Subtract, x, y);
         }
     }
     return x;
@@ -215,11 +217,11 @@ ExpPtr Parser::ParseTerm()
         auto y = ParseUnary();
         if (t.tag == TokenTag::Multiply)
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Multiply, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Multiply, x, y);
         }
         else
         {
-            x = expressionFactory.Create<BinaryExpression>(Pos(start), ExpressionType::Divide, x, y);
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Divide, x, y);
         }
     }
     return x;
@@ -232,19 +234,19 @@ ExpPtr Parser::ParseUnary()
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryPlus, x, nullptr);
+        return GetExpressionFactory().Create<UnaryExpression>(Pos(start), ExpressionType::UnaryPlus, x, nullptr);
     }
     else if (Look().tag == TokenTag::Subtract)
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::UnaryMinus, x, nullptr);
+        return GetExpressionFactory().Create<UnaryExpression>(Pos(start), ExpressionType::UnaryMinus, x, nullptr);
     }
     else if (Look().tag == TokenTag::Not)
     {
         Advance();
         auto x = ParseUnary();
-        return expressionFactory.Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
+        return GetExpressionFactory().Create<UnaryExpression>(Pos(start), ExpressionType::Not, x, nullptr);
     }
     else
     {
@@ -263,7 +265,7 @@ ExpPtr Parser::ParsePostfix()
         if (Look().tag == TokenTag::LeftParenthesis)
         {
             auto arguments = ParseArguments();
-            x = expressionFactory.Create<CallExpression>(Pos(start), x, arguments);
+            x = GetExpressionFactory().Create<CallExpression>(Pos(start), x, arguments);
         }
         else if (Look().tag == TokenTag::ScopeResolutionOperator)
         {
@@ -276,7 +278,7 @@ ExpPtr Parser::ParsePostfix()
                     Match(TokenTag::ScopeResolutionOperator);
                     qualifiedName.push_back(Match(TokenTag::Identifier).text);
                 }
-                x = expressionFactory.Create<ParameterExpression>(Pos(start), qualifiedName, nullptr);
+                x = GetExpressionFactory().Create<ParameterExpression>(Pos(start), qualifiedName, nullptr);
             }
             else
             {
@@ -299,7 +301,7 @@ ExpPtr Parser::ParsePostfix()
             Match(TokenTag::Dot);
             std::u32string fieldName = Match(TokenTag::Identifier).text;
 
-            x = expressionFactory.Create<MemberExpression>(Pos(start), x, fieldName);
+            x = GetExpressionFactory().Create<MemberExpression>(Pos(start), x, fieldName);
         }
         else
         {
@@ -328,7 +330,7 @@ ExpPtr Parser::ParseFactor()
         const Token &start = Look();
         Advance();
         int32_t i = stoi(Utility::UTF32ToUTF8(text));
-        return expressionFactory.Create<ConstantExpression>(Pos(start), i, TypeCode::Int32);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), i, TypeCode::Int32);
     }
     else if (Look().tag == TokenTag::Float)
     {
@@ -336,40 +338,41 @@ ExpPtr Parser::ParseFactor()
         const Token &start = Look();
         Advance();
         double_t d = stod(Utility::UTF32ToUTF8(text));
-        return expressionFactory.Create<ConstantExpression>(Pos(start), d, TypeCode::Float64);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), d, TypeCode::Float64);
     }
     else if (Look().tag == TokenTag::Character)
     {
         std::u32string text = Look().text;
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), text.front(), TypeCode::Char);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), text.front(), TypeCode::Char);
     }
     else if (Look().tag == TokenTag::String)
     {
         std::u32string text = Look().text;
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), text, TypeCode::String);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), text, TypeCode::String);
     }
     else if (Look().tag == TokenTag::True)
     {
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), true, TypeCode::Boolean);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), true, TypeCode::Boolean);
     }
     else if (Look().tag == TokenTag::False)
     {
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ConstantExpression>(Pos(start), false, TypeCode::Boolean);
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), false, TypeCode::Boolean);
     }
     else if (Look().tag == TokenTag::Identifier)
     {
         std::u32string name = Look().text;
         const Token &start = Look();
         Advance();
-        return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, nullptr);
+        return GetExpressionFactory().Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name},
+                                                                  nullptr);
     }
     else if (Look().tag == TokenTag::New)
     {
@@ -395,7 +398,7 @@ ExpPtr Parser::ParseBlock()
         expressions.push_back(Statement());
     }
     Match(TokenTag::RightBrace);
-    return expressionFactory.Create<BlockExpression>(Pos(start), expressions);
+    return GetExpressionFactory().Create<BlockExpression>(Pos(start), expressions);
 }
 
 ExpPtr Parser::IfStatement()
@@ -412,20 +415,20 @@ ExpPtr Parser::IfStatement()
         if (Look().tag == TokenTag::If)
         {
             auto chunk = IfStatement();
-            return expressionFactory.Create<ConditionalExpression>(Pos(start), condition, ifTrue, chunk);
+            return GetExpressionFactory().Create<ConditionalExpression>(Pos(start), condition, ifTrue, chunk);
         }
         else
         {
             auto chunk = ParseBlock();
-            return expressionFactory.Create<ConditionalExpression>(Pos(start), condition, ifTrue, chunk);
+            return GetExpressionFactory().Create<ConditionalExpression>(Pos(start), condition, ifTrue, chunk);
         }
     }
     else
     {
         auto emptyRange = Pos(Look());
-        auto *voidType = typeSyntaxFactory.Create(emptyRange, std::vector<std::u32string>{U"Void"}, {});
-        auto empty = expressionFactory.Create<DefaultExpression>(emptyRange, voidType);
-        return expressionFactory.Create<ConditionalExpression>(Pos(start), condition, ifTrue, empty);
+        auto *voidType = GetTypeSyntaxFactory().Create(emptyRange, std::vector<std::u32string>{U"Void"}, {});
+        auto empty = GetExpressionFactory().Create<DefaultExpression>(emptyRange, voidType);
+        return GetExpressionFactory().Create<ConditionalExpression>(Pos(start), condition, ifTrue, empty);
     }
 }
 
@@ -437,7 +440,7 @@ ExpPtr Parser::WhileStatement()
     auto condition = ParseOr();
     Match(TokenTag::RightParenthesis);
     auto body = ParseBlock();
-    return expressionFactory.Create<WhileLoopExpression>(Pos(start), condition, body);
+    return GetExpressionFactory().Create<WhileLoopExpression>(Pos(start), condition, body);
 }
 
 Expressions::VariableDeclarationExpression *Parser::VariableDeclarationStatement()
@@ -454,7 +457,7 @@ Expressions::VariableDeclarationExpression *Parser::VariableDeclarationStatement
     Match(TokenTag::Assign);
     auto initializer = ParseOr();
 
-    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
+    return GetExpressionFactory().Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
 }
 
 Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::vector<Annotation> &annotations)
@@ -484,16 +487,18 @@ Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::v
     TypeSyntaxPtr returnType = ParseType();
     if (Look().tag == TokenTag::Semicolon)
     {
-        ExpPtr body = expressionFactory.Create<DefaultExpression>(Pos(Look()), returnType);
+        ExpPtr body = GetExpressionFactory().Create<DefaultExpression>(Pos(Look()), returnType);
         Match(TokenTag::Semicolon);
 
-        return expressionFactory.Create<LambdaExpression>(Pos(start), name, body, parameters, returnType, annotations);
+        return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
+                                                               annotations);
     }
     else
     {
         ExpPtr body = ParseBlock();
 
-        return expressionFactory.Create<LambdaExpression>(Pos(start), name, body, parameters, returnType, annotations);
+        return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
+                                                               annotations);
     }
 }
 
@@ -520,7 +525,7 @@ Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable()
     auto initializer = ParseOr();
     Match(TokenTag::Semicolon);
 
-    return expressionFactory.Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
+    return GetExpressionFactory().Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
 }
 
 Expressions::StructureExpression *Parser::ParseStructureDefinition()
@@ -549,7 +554,7 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
         qualifiedName.push_back(path.at(i));
     }
     qualifiedName.push_back(name);
-    return expressionFactory.Create<StructureExpression>(Pos(start), qualifiedName, fields);
+    return GetExpressionFactory().Create<StructureExpression>(Pos(start), qualifiedName, fields);
 }
 
 std::vector<ExpPtr> Parser::ParseArguments()
@@ -587,7 +592,7 @@ Expressions::ParameterExpression *Parser::ParseParameter()
     Match(TokenTag::Colon);
     TypeSyntaxPtr type = ParseType();
 
-    return expressionFactory.Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, type);
+    return GetExpressionFactory().Create<ParameterExpression>(Pos(start), std::vector<std::u32string>{name}, type);
 }
 
 TypeSyntaxPtr Parser::ParseType()
@@ -604,11 +609,11 @@ TypeSyntaxPtr Parser::ParseType()
     {
         auto arguments = ParseTypeArguments();
 
-        return typeSyntaxFactory.Create(Pos(start), qualifiedName, arguments);
+        return GetTypeSyntaxFactory().Create(Pos(start), qualifiedName, arguments);
     }
     else
     {
-        return typeSyntaxFactory.Create(Pos(start), qualifiedName, {});
+        return GetTypeSyntaxFactory().Create(Pos(start), qualifiedName, {});
     }
 }
 
@@ -637,8 +642,8 @@ void Parser::ParseNamespace()
         std::u32string name = Match(TokenTag::Identifier).text;
         Match(TokenTag::LeftBrace);
 
-        namespaceFactory.Insert(top, {name});
-        Namespace *current = namespaceFactory.Search(top, {name});
+        GetNamespaceFactory().Insert(top, {name});
+        Namespace *current = GetNamespaceFactory().Search(top, {name});
         namespaceStack.push(current);
 
         while (Look().tag != TokenTag::RightBrace)
@@ -759,9 +764,9 @@ Expressions::NewExpression *Parser::ParseNewExpression()
         fieldsInitialization.AddItem(fieldName, value);
     }
     Match(TokenTag::RightBrace);
-    TypeSyntax *typeSyntax = typeSyntaxFactory.Create(Pos(start), namespacePath, {});
+    TypeSyntax *typeSyntax = GetTypeSyntaxFactory().Create(Pos(start), namespacePath, {});
     NewExpression *newExpression =
-        expressionFactory.Create<NewExpression>(Pos(start), typeSyntax, fieldsInitialization);
+        GetExpressionFactory().Create<NewExpression>(Pos(start), typeSyntax, fieldsInitialization);
     spdlog::info("Completing creating the object initialization expression.");
 
     return newExpression;

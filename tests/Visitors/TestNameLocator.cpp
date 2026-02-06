@@ -1,5 +1,6 @@
 #include <catch2/catch.hpp>
 
+#include "Compilation/CompilationContext.hpp"
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
 #include "Visitors/NameLocator.hpp"
@@ -10,13 +11,13 @@ using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 using namespace Cygni::Visitors;
 
-static Parser CreateParser(const std::u32string &sourceCode)
+static Parser CreateParser(Cygni::Compilation::CompilationContext &compilationContext, const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
     Lexer lexer(sourceCodeFile, sourceCode);
     std::vector<Token> tokens = lexer.ReadAll();
 
-    return Parser(tokens, sourceCodeFile);
+    return Parser(tokens, sourceCodeFile, compilationContext);
 }
 
 static std::optional<NameInfo> FindLocalVariableInfo(NameLocator &nameLocator, const std::u32string &name)
@@ -49,7 +50,8 @@ static std::optional<NameInfo> FindLocalVariableInfo(NameLocator &nameLocator, c
 
 TEST_CASE("test variable locating", "[Variable]")
 {
-    Parser parser = CreateParser(U"func Add(x: Int, y: Int): Int { var z = x + y; z; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Add(x: Int, y: Int): Int { var z = x + y; z; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -80,7 +82,8 @@ TEST_CASE("test variable locating", "[Variable]")
 
 TEST_CASE("test single constant locating", "[Constant]")
 {
-    Parser parser = CreateParser(U"func GetValue(): Int { 42; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func GetValue(): Int { 42; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -98,7 +101,8 @@ TEST_CASE("test single constant locating", "[Constant]")
 
 TEST_CASE("test multiple constants locating", "[Constant]")
 {
-    Parser parser = CreateParser(U"func Sum(): Int { 1 + 2 + 3; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Sum(): Int { 1 + 2 + 3; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -119,7 +123,8 @@ TEST_CASE("test multiple constants locating", "[Constant]")
 
 TEST_CASE("test function variable count", "[Function]")
 {
-    Parser parser = CreateParser(U"func Compute(a: Int, b: Int): Int { var c = a; var d = b; c + d; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Compute(a: Int, b: Int): Int { var c = a; var d = b; c + d; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -141,7 +146,8 @@ TEST_CASE("test function variable count", "[Function]")
 
 TEST_CASE("test function locating in namespace", "[Function][Namespace]")
 {
-    Parser parser = CreateParser(U"module M { func Add(x: Int, y: Int): Int { x + y; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func Add(x: Int, y: Int): Int { x + y; } }");
     parser.ParseNamespace();
 
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
@@ -162,7 +168,8 @@ TEST_CASE("test function locating in namespace", "[Function][Namespace]")
 
 TEST_CASE("test multiple functions locating in namespace", "[Function][Namespace]")
 {
-    Parser parser = CreateParser(U"module M { func First(): Int { 1; } func Second(): Int { 2; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func First(): Int { 1; } func Second(): Int { 2; } }");
     parser.ParseNamespace();
 
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
@@ -191,7 +198,8 @@ TEST_CASE("test multiple functions locating in namespace", "[Function][Namespace
 
 TEST_CASE("test global variable locating", "[GlobalVariable][Namespace]")
 {
-    Parser parser = CreateParser(U"module M { var count: Int = 0; func Get(): Int { count; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { var count: Int = 0; func Get(): Int { count; } }");
     parser.ParseNamespace();
 
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
@@ -215,7 +223,8 @@ TEST_CASE("test global variable locating", "[GlobalVariable][Namespace]")
 
 TEST_CASE("test structure locating", "[Structure][Namespace]")
 {
-    Parser parser = CreateParser(U"module M { struct Point { x: Int; y: Int; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } }");
     parser.ParseNamespace();
 
     Scope<NameInfo> nameScope;
@@ -239,7 +248,8 @@ TEST_CASE("test structure locating", "[Structure][Namespace]")
 
 TEST_CASE("test CheckNamespace processes function body", "[Namespace]")
 {
-    Parser parser = CreateParser(U"module M { func Square(n: Int): Int { n * n; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func Square(n: Int): Int { n * n; } }");
     parser.ParseNamespace();
 
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
@@ -269,7 +279,8 @@ TEST_CASE("test CheckNamespace processes function body", "[Namespace]")
 
 TEST_CASE("test nested block variable locating", "[Variable][Block]")
 {
-    Parser parser = CreateParser(U"func Test(a: Int): Int { var b = 1; { var c = 2; a + b + c; }; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Test(a: Int): Int { var b = 1; { var c = 2; a + b + c; }; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -302,7 +313,8 @@ TEST_CASE("test nested block variable locating", "[Variable][Block]")
 
 TEST_CASE("test conditional expression locating", "[Conditional]")
 {
-    Parser parser = CreateParser(U"func Max(a: Int, b: Int): Int { if (a > b) { a; } else { b; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Max(a: Int, b: Int): Int { if (a > b) { a; } else { b; } }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -324,7 +336,8 @@ TEST_CASE("test conditional expression locating", "[Conditional]")
 
 TEST_CASE("test while loop variable locating", "[WhileLoop]")
 {
-    Parser parser = CreateParser(U"func Count(n: Int): Int { var i = 0; while (i < n) { i = i + 1; } i; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func Count(n: Int): Int { var i = 0; while (i < n) { i = i + 1; } i; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
