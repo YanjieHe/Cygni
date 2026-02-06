@@ -1,10 +1,8 @@
 #ifndef CYGNI_EXPRESSIONS_TYPE_HPP
 #define CYGNI_EXPRESSIONS_TYPE_HPP
 #include "Utility/OrderPreservingMap.hpp"
-#include <nlohmann/json.hpp>
+#include <utility>
 #include <vector>
-
-using Json = nlohmann::json;
 
 namespace Cygni
 {
@@ -24,132 +22,38 @@ enum class TypeCode
     Int64 = 8,
     String = 9,
     Structure = 10,
-    Union = 11,
-    Unknown = 12
+    Interface = 11,
+    Union = 12,
+    Unknown = 13
 };
 
 class Type
 {
   public:
     virtual TypeCode GetTypeCode() const = 0;
+    virtual ~Type() = default;
 };
 
-class EmptyType : public Type
+template <TypeCode Code>
+class BasicType : public Type
 {
   public:
-    EmptyType()
-    {
-    }
-
+    BasicType() = default;
     TypeCode GetTypeCode() const override
     {
-        return TypeCode::Empty;
+        return Code;
     }
 };
 
-class UnknownType : public Type
-{
-  public:
-    UnknownType()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Unknown;
-    }
-};
-
-class Int32Type : public Type
-{
-  public:
-    Int32Type()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Int32;
-    }
-};
-
-class Int64Type : public Type
-{
-  public:
-    Int64Type()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Int64;
-    }
-};
-
-class Float32Type : public Type
-{
-  public:
-    Float32Type()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Float32;
-    }
-};
-
-class Float64Type : public Type
-{
-  public:
-    Float64Type()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Float64;
-    }
-};
-
-class BooleanType : public Type
-{
-  public:
-    BooleanType()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Boolean;
-    }
-};
-
-class CharType : public Type
-{
-  public:
-    CharType()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::Char;
-    }
-};
-
-class StringType : public Type
-{
-  public:
-    StringType()
-    {
-    }
-
-    TypeCode GetTypeCode() const override
-    {
-        return TypeCode::String;
-    }
-};
+using EmptyType = BasicType<TypeCode::Empty>;
+using UnknownType = BasicType<TypeCode::Unknown>;
+using Int32Type = BasicType<TypeCode::Int32>;
+using Int64Type = BasicType<TypeCode::Int64>;
+using Float32Type = BasicType<TypeCode::Float32>;
+using Float64Type = BasicType<TypeCode::Float64>;
+using BooleanType = BasicType<TypeCode::Boolean>;
+using CharType = BasicType<TypeCode::Char>;
+using StringType = BasicType<TypeCode::String>;
 
 class ArrayType : public Type
 {
@@ -221,16 +125,44 @@ class UnionType : public Type
     }
 };
 
+class InterfaceType : public Type
+{
+  private:
+    std::vector<std::u32string> qualifiedName;
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> methods;
+
+  public:
+    InterfaceType(const std::vector<std::u32string> &qualifiedName,
+                  const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods)
+        : qualifiedName{qualifiedName}, methods{methods}
+    {
+    }
+    TypeCode GetTypeCode() const override
+    {
+        return TypeCode::Interface;
+    }
+    const std::vector<std::u32string> &QualifiedName() const
+    {
+        return qualifiedName;
+    }
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &Methods() const
+    {
+        return methods;
+    }
+};
+
 class StructureType : public Type
 {
   private:
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, const Type *> fields;
+    std::vector<const InterfaceType *> interfaces;
 
   public:
-    StructureType(std::vector<std::u32string> qualifiedName,
-                  Utility::OrderPreservingMap<std::u32string, const Type *> fields)
-        : qualifiedName{qualifiedName}, fields{fields}
+    StructureType(const std::vector<std::u32string> &qualifiedName,
+                  const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+                  const std::vector<const InterfaceType *> &interfaces)
+        : qualifiedName{qualifiedName}, fields{fields}, interfaces{interfaces}
     {
     }
 
@@ -244,9 +176,24 @@ class StructureType : public Type
         return qualifiedName;
     }
 
-    const Utility::OrderPreservingMap<std::u32string, const Type *> Fields() const
+    const Utility::OrderPreservingMap<std::u32string, const Type *> &Fields() const
     {
         return fields;
+    }
+
+    const std::vector<const InterfaceType *> &Interfaces() const
+    {
+        return interfaces;
+    }
+
+    void SetFields(const Utility::OrderPreservingMap<std::u32string, const Type *> &newFields)
+    {
+        fields = newFields;
+    }
+
+    void SetInterfaces(const std::vector<const InterfaceType *> &newInterfaces)
+    {
+        interfaces = newInterfaces;
     }
 };
 
@@ -258,6 +205,9 @@ class TypeFactory
   public:
     TypeFactory() = default;
     TypeFactory(const TypeFactory &) = delete;
+    TypeFactory(TypeFactory &&) = delete;
+    TypeFactory &operator=(const TypeFactory &) = delete;
+    TypeFactory &operator=(TypeFactory &&) = delete;
     ~TypeFactory();
 
     static Type *CreateBasicType(TypeCode typeCode);
@@ -267,10 +217,9 @@ class TypeFactory
     ArrayType *CreateArrayType(const Type *elementType);
     const Type *CreateUnionType(const Type *a, const Type *b);
     CallableType *CreateCallableType(std::vector<const Type *> arguments, const Type *returnType);
-    StructureType *CreateStructureType(std::vector<std::u32string> qualifiedName,
-                                       Utility::OrderPreservingMap<std::u32string, const Type *> fields);
-
-    Json ToJson(const Type *type);
+    StructureType *CreateStructureType(const std::vector<std::u32string> &qualifiedName,
+                                       const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+                                       const std::vector<const InterfaceType *> &implementedInterfaces);
 
   private:
     static bool AreOrderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b);

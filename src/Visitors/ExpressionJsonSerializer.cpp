@@ -26,31 +26,31 @@ Json ExpressionJsonSerializer::VisitConstant(const ConstantExpression *node)
     switch (node->GetTypeCode())
     {
     case TypeCode::Int32: {
-        value = std::any_cast<int32_t>(node->Value());
+        value = std::get<int32_t>(node->Value());
         break;
     }
     case TypeCode::Int64: {
-        value = std::any_cast<int64_t>(node->Value());
+        value = std::get<int64_t>(node->Value());
         break;
     }
     case TypeCode::Float32: {
-        value = std::any_cast<float_t>(node->Value());
+        value = std::get<float_t>(node->Value());
         break;
     }
     case TypeCode::Float64: {
-        value = std::any_cast<double_t>(node->Value());
+        value = std::get<double_t>(node->Value());
         break;
     }
     case TypeCode::Boolean: {
-        value = std::any_cast<bool>(node->Value());
+        value = std::get<bool>(node->Value());
         break;
     }
     case TypeCode::Char: {
-        value = Utility::UTF32ToUTF8(std::any_cast<std::u32string>(node->Value()));
+        value = Utility::UTF32ToUTF8(std::get<std::u32string>(node->Value()));
         break;
     }
     case TypeCode::String: {
-        value = Utility::UTF32ToUTF8(std::any_cast<std::u32string>(node->Value()));
+        value = Utility::UTF32ToUTF8(std::get<std::u32string>(node->Value()));
         break;
     }
     default: {
@@ -71,7 +71,7 @@ Json ExpressionJsonSerializer::VisitParameter(const ParameterExpression *node)
 
     json["NodeType"] = Utility::EnumToString(node->NodeType());
     json["Name"] = Utility::UTF32ToUTF8(node->Name());
-    json["Type"] = magic_enum::enum_name<TypeCode>(node->GetType()->GetTypeCode());
+    json["Type"] = TypeSyntaxToString(node->GetTypeSyntax());
     json["SourceRange"] = SourceRangeToJson(node->GetSourceRange());
 
     return json;
@@ -168,7 +168,7 @@ Json ExpressionJsonSerializer::VisitDefault(const DefaultExpression *node)
 
     json["NodeType"] = Utility::EnumToString(node->NodeType());
     json["SourceRange"] = SourceRangeToJson(node->GetSourceRange());
-    json["Type"] = magic_enum::enum_name<TypeCode>(node->GetType()->GetTypeCode());
+    json["Type"] = TypeSyntaxToString(node->GetTypeSyntax());
 
     return json;
 }
@@ -198,7 +198,7 @@ Json ExpressionJsonSerializer::VisitNew(const NewExpression *node)
             FieldInitializationToJson(key, node->FieldsInitialization().GetItemByKey(key)));
     }
     json["FieldsInitialization"] = fieldsInitializationJson;
-    json["Type"] = magic_enum::enum_name<TypeCode>(node->GetType()->GetTypeCode());
+    json["Type"] = TypeSyntaxToString(node->GetTypeSyntax());
 
     return json;
 }
@@ -244,6 +244,43 @@ Json ExpressionJsonSerializer::ExpressionToJson(const Expression *node)
     ExpressionJsonSerializer serializer;
 
     return serializer.Visit(node);
+}
+
+std::string ExpressionJsonSerializer::TypeSyntaxToString(const TypeSyntax *typeSyntax)
+{
+    if (typeSyntax == nullptr)
+    {
+        return "<Unknown>";
+    }
+    else
+    {
+        std::string result;
+        const auto &qualifiedName = typeSyntax->QualifiedName();
+        for (size_t i = 0; i < qualifiedName.size(); ++i)
+        {
+            if (i > 0)
+            {
+                result += "::";
+            }
+            result += Utility::UTF32ToUTF8(qualifiedName.at(i));
+        }
+
+        if (!typeSyntax->Arguments().empty())
+        {
+            result += "[";
+            for (size_t i = 0; i < typeSyntax->Arguments().size(); ++i)
+            {
+                if (i > 0)
+                {
+                    result += ", ";
+                }
+                result += TypeSyntaxToString(typeSyntax->Arguments().at(i));
+            }
+            result += "]";
+        }
+
+        return result;
+    }
 }
 
 }; /* namespace Visitors */

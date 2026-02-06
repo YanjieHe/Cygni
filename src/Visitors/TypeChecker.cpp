@@ -23,45 +23,7 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
     spdlog::debug("{}: {}", __FUNCTION__, Utility::EnumToString(node->NodeType()));
     if (node->NodeType() == ExpressionType::Assign)
     {
-        const Type *right = Visit(node->Right(), scope);
-        if (node->Left()->NodeType() == ExpressionType::Parameter)
-        {
-            /* TODO: check if the variable is modifiable. */
-            const Type *left = Visit(node->Left(), scope);
-
-            if (TypeFactory::AreTypesEqual(left, right))
-            {
-                return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
-            }
-            else
-            {
-                throw TreeException(__FILE__, __LINE__, "parameter assignment type mismatch error.", node, nullptr);
-            }
-        }
-        else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
-        {
-            /* TODO: check if the field is modifiable. */
-            const Type *left = Visit(node->Left(), scope);
-
-            if (TypeFactory::AreTypesEqual(left, right))
-            {
-                return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
-            }
-            else
-            {
-                throw TreeException(__FILE__, __LINE__, "member assignment type mismatch error.", node, nullptr);
-            }
-        }
-        else
-        {
-            spdlog::error("Unsupported left side in assignment. Expected a parameter, but got: {}",
-                          Utility::EnumToString(node->Left()->NodeType()));
-
-            throw TreeException(__FILE__, __LINE__,
-                                "Unsupported left side in assignment. Expected a parameter, but got: " +
-                                    Utility::EnumToString(node->Left()->NodeType()),
-                                node, nullptr);
-        }
+        return CheckAssignment(node, scope);
     }
     else
     {
@@ -91,7 +53,12 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "arithmetic operation type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__,
+                                    "Arithmetic operation type mismatch: cannot apply '" +
+                                        Utility::EnumToString(node->NodeType()) + "' to '" +
+                                        Utility::EnumToString(left->GetTypeCode()) + "' and '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                    node, nullptr);
             }
         }
         case ExpressionType::GreaterThan:
@@ -124,9 +91,11 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                spdlog::error("left: {}, right: {}", Utility::EnumToString(left->GetTypeCode()),
-                              Utility::EnumToString(right->GetTypeCode()));
-                throw TreeException(__FILE__, __LINE__, "comparison type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__,
+                                    "Comparison type mismatch: cannot compare '" +
+                                        Utility::EnumToString(left->GetTypeCode()) + "' with '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                    node, nullptr);
             }
         }
         case ExpressionType::Equal:
@@ -161,7 +130,11 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                throw TreeException(__FILE__, __LINE__, "equality type mismatch error.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__,
+                                    "Equality comparison type mismatch: cannot compare '" +
+                                        Utility::EnumToString(left->GetTypeCode()) + "' with '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "' for equality.",
+                                    node, nullptr);
             }
         }
         case ExpressionType::And:
@@ -172,15 +145,19 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
             }
             else
             {
-                spdlog::info("The operands of logical operations (and, or) must be boolean type.");
                 throw TreeException(__FILE__, __LINE__,
-                                    "The operands of logical operations (and, or) must be boolean type.", node,
-                                    nullptr);
+                                    "Logical operation '" + Utility::EnumToString(node->NodeType()) +
+                                        "' requires boolean operands, but got '" +
+                                        Utility::EnumToString(left->GetTypeCode()) + "' and '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                    node, nullptr);
             }
             break;
         }
         default: {
-            throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "Unsupported binary operation '" + Utility::EnumToString(node->NodeType()) + "'.", node,
+                                nullptr);
         }
         }
     }
@@ -215,14 +192,14 @@ const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<c
         VariableDeclarationExpression *varDecl = namespaceFactory.SearchGlobalVariable(top, node->QualifiedName());
         if (varDecl != nullptr)
         {
-            const Type *type = varDecl->GetType();
+            const Type *type = ResolveTypeSyntax(varDecl->GetTypeSyntax());
 
             return Register(node, type);
         }
         LambdaExpression *funcDecl = namespaceFactory.SearchFunction(top, node->QualifiedName());
         if (funcDecl != nullptr)
         {
-            CallableType *callableType = funcDecl->GetCallableType(Types);
+            CallableType *callableType = BuildCallableType(funcDecl);
 
             return Register(node, static_cast<const Type *>(callableType));
         }
@@ -262,8 +239,9 @@ const Type *TypeChecker::VisitConditional(const ConditionalExpression *node, Sco
     else
     {
         throw TreeException(__FILE__, __LINE__,
-                            "The type of condition of the conditional expression must be a boolean type.", node,
-                            nullptr);
+                            "Conditional expression requires a boolean condition, but got '" +
+                                Utility::EnumToString(test->GetTypeCode()) + "'.",
+                            node, nullptr);
     }
 }
 
@@ -279,7 +257,10 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
         }
         else
         {
-            throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "Logical 'not' operator requires a boolean operand, but got '" +
+                                    Utility::EnumToString(operand->GetTypeCode()) + "'.",
+                                node, nullptr);
         }
     }
     case ExpressionType::Halt: {
@@ -289,11 +270,15 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
         }
         else
         {
-            throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "'halt' requires an Int32 exit code, but got '" +
+                                    Utility::EnumToString(operand->GetTypeCode()) + "'.",
+                                node, nullptr);
         }
     }
     case ExpressionType::Convert: {
-        if (TypeFactory::AreTypesEqual(operand, node->GetType()))
+        const Type *targetType = ResolveTypeSyntax(node->GetTargetTypeSyntax());
+        if (TypeFactory::AreTypesEqual(operand, targetType))
         {
             return Register(node, operand);
         }
@@ -303,21 +288,23 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
                 operand->GetTypeCode() == TypeCode::Float32 || operand->GetTypeCode() == TypeCode::Float64 ||
                 operand->GetTypeCode() == TypeCode::Boolean || operand->GetTypeCode() == TypeCode::Char)
             {
-                if (node->GetType()->GetTypeCode() == TypeCode::Int32 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Int64 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Float32 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Float64 ||
-                    node->GetType()->GetTypeCode() == TypeCode::Boolean ||
-                    node->GetType()->GetTypeCode() == TypeCode::Char)
+                if (targetType->GetTypeCode() == TypeCode::Int32 || targetType->GetTypeCode() == TypeCode::Int64 ||
+                    targetType->GetTypeCode() == TypeCode::Float32 || targetType->GetTypeCode() == TypeCode::Float64 ||
+                    targetType->GetTypeCode() == TypeCode::Boolean || targetType->GetTypeCode() == TypeCode::Char)
                 {
-                    return Register(node, node->GetType());
+                    return Register(node, targetType);
                 }
             }
-            throw TreeException(__FILE__, __LINE__, "convert type mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "Cannot convert from '" + Utility::EnumToString(operand->GetTypeCode()) + "' to '" +
+                                    Utility::EnumToString(targetType->GetTypeCode()) + "'.",
+                                node, nullptr);
         }
     }
     default: {
-        throw TreeException(__FILE__, __LINE__, "type mismatch error.", node, nullptr);
+        throw TreeException(__FILE__, __LINE__,
+                            "Unsupported unary operation '" + Utility::EnumToString(node->NodeType()) + "'.", node,
+                            nullptr);
     }
     }
 }
@@ -335,7 +322,10 @@ const Type *TypeChecker::VisitCall(const CallExpression *node, Scope<const Type 
                 auto argType = Visit(node->Arguments().at(i), scope);
                 if (!TypeFactory::AreTypesEqual(argType, t->Arguments().at(i)))
                 {
-                    throw TreeException(__FILE__, __LINE__, "argument " + std::to_string(i) + " type mismatch error.",
+                    throw TreeException(__FILE__, __LINE__,
+                                        "Argument " + std::to_string(i + 1) + " type mismatch: expected '" +
+                                            Utility::EnumToString(t->Arguments().at(i)->GetTypeCode()) + "' but got '" +
+                                            Utility::EnumToString(argType->GetTypeCode()) + "'.",
                                         node, nullptr);
                 }
             }
@@ -343,12 +333,43 @@ const Type *TypeChecker::VisitCall(const CallExpression *node, Scope<const Type 
         }
         else
         {
-            throw TreeException(__FILE__, __LINE__, "argument size mismatch error.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "Argument count mismatch: function expects " + std::to_string(t->Arguments().size()) +
+                                    " argument(s), but got " + std::to_string(node->Arguments().size()) + ".",
+                                node, nullptr);
+        }
+    }
+    else if (callableType->GetTypeCode() == TypeCode::Array)
+    {
+        auto arrayType = static_cast<const ArrayType *>(callableType);
+        if (node->Arguments().size() == 1)
+        {
+            auto indexType = Visit(node->Arguments().front(), scope);
+            if (indexType->GetTypeCode() == TypeCode::Int32)
+            {
+                return Register(node, arrayType->ElementType());
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "Array index must be of type 'Int32', but got '" +
+                                        Utility::EnumToString(indexType->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Array access requires exactly 1 index, but got " +
+                                    std::to_string(node->Arguments().size()) + ".",
+                                node, nullptr);
         }
     }
     else
     {
-        throw TreeException(__FILE__, __LINE__, "The type of function of the call expression must be a callable type.",
+        throw TreeException(__FILE__, __LINE__,
+                            "Expression is not callable: got '" + Utility::EnumToString(callableType->GetTypeCode()) +
+                                "' but expected a function or array.",
                             node, nullptr);
     }
 }
@@ -361,8 +382,9 @@ const Type *TypeChecker::VisitLambda(const LambdaExpression *node, Scope<const T
     for (const auto &parameter : node->Parameters())
     {
         spdlog::debug("Type checker declares parameter \"{}\".", Utility::UTF32ToUTF8(parameter->Name()));
-        scope.Declare(parameter->Name(), parameter->GetType());
-        argumentTypes.push_back(parameter->GetType());
+        const Type *parameterType = ResolveTypeSyntax(parameter->GetTypeSyntax());
+        scope.Declare(parameter->Name(), parameterType);
+        argumentTypes.push_back(parameterType);
     }
     const Type *returnType = Visit(node->Body(), &scope);
     return Types.CreateCallableType(argumentTypes, returnType);
@@ -378,20 +400,22 @@ const Type *TypeChecker::VisitWhileLoop(const WhileLoopExpression *node, Scope<c
     }
     else
     {
-        throw TreeException(__FILE__, __LINE__, "The condition of the loop expression must return a boolean value.",
+        throw TreeException(__FILE__, __LINE__,
+                            "While loop condition must be a boolean, but got '" +
+                                Utility::EnumToString(type->GetTypeCode()) + "'.",
                             node, nullptr);
     }
 }
 
 const Type *TypeChecker::VisitDefault(const DefaultExpression *node, Scope<const Type *> *scope)
 {
-    return node->GetType();
+    return Register(node, ResolveTypeSyntax(node->GetTypeSyntax()));
 }
 
 const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpression *node, Scope<const Type *> *scope)
 {
     const Type *initializer = Visit(node->Initializer(), scope);
-    if (node->GetType()->GetTypeCode() == TypeCode::Unknown)
+    if (node->GetTypeSyntax() == nullptr)
     {
         scope->Declare(node->Name(), initializer);
         Register(node, initializer);
@@ -400,7 +424,7 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
     }
     else
     {
-        const Type *leftType = VisitType(node->GetType());
+        const Type *leftType = ResolveTypeSyntax(node->GetTypeSyntax());
         if (TypeFactory::AreTypesEqual(leftType, initializer))
         {
             scope->Declare(node->Name(), initializer);
@@ -408,10 +432,10 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
         }
         else
         {
-            spdlog::error("The value assigned to variable '{}' does not match its "
-                          "declared type.",
-                          Utility::UTF32ToUTF8(node->Name()));
-            throw TreeException(__FILE__, __LINE__, "The assigned value does not match the declared variable type.",
+            throw TreeException(__FILE__, __LINE__,
+                                "Variable '" + Utility::UTF32ToUTF8(node->Name()) + "' declared as '" +
+                                    Utility::EnumToString(leftType->GetTypeCode()) + "' but initialized with '" +
+                                    Utility::EnumToString(initializer->GetTypeCode()) + "'.",
                                 static_cast<const Expression *>(node), nullptr);
         }
     }
@@ -421,9 +445,8 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
 
 const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *> *scope)
 {
-    spdlog::info("Create a new object of type '{}'", Utility::EnumToString(node->GetType()->GetTypeCode()));
-
-    const Type *type = VisitType(node->GetType());
+    const Type *type = ResolveTypeSyntax(node->GetTypeSyntax());
+    spdlog::info("Create a new object of type '{}'", Utility::EnumToString(type->GetTypeCode()));
     Register(node, type);
     if (type->GetTypeCode() == TypeCode::Structure)
     {
@@ -459,20 +482,17 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
                     {
                         /* Check if the types are equal. */
                         const Type *actualType = Visit(node->FieldsInitialization().GetItemByKey(key), scope);
-                        const Type *expectedType = structureDefinition->Fields().GetItemByKey(key);
+                        const Type *expectedType = ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(key));
                         if (TypeFactory::AreTypesEqual(expectedType, actualType))
                         {
                             fieldNameSet.insert(key);
                         }
                         else
                         {
-                            spdlog::error("The type of the value assigned does not match the "
-                                          "type of the field '{}'.",
-                                          Utility::UTF32ToUTF8(key));
-
                             throw TreeException(__FILE__, __LINE__,
-                                                "The type of the value assigned does not "
-                                                "match the type of the field.",
+                                                "Field '" + Utility::UTF32ToUTF8(key) + "' type mismatch: expected '" +
+                                                    Utility::EnumToString(expectedType->GetTypeCode()) + "' but got '" +
+                                                    Utility::EnumToString(actualType->GetTypeCode()) + "'.",
                                                 static_cast<const Expression *>(node), nullptr);
                         }
                     }
@@ -480,39 +500,41 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
                 else
                 {
                     /* The field doesn't exist. */
-                    spdlog::error("The field '{}' doesn't exist.", Utility::UTF32ToUTF8(key));
-
-                    throw TreeException(__FILE__, __LINE__, "The field doesn't exist.",
+                    throw TreeException(__FILE__, __LINE__,
+                                        "Field '" + Utility::UTF32ToUTF8(key) + "' does not exist in structure '" +
+                                            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", path)) + "'.",
                                         static_cast<const Expression *>(node), nullptr);
                 }
             }
             if (fieldNameSet.size() == structureDefinition->Fields().GetAllItems().size())
             {
-                return structureDefinition->GetType();
+                return type;
             }
             else
             {
                 /* Not all fields have been assigned values. */
-                spdlog::error("Not all fields have been assigned values.");
-
-                throw TreeException(__FILE__, __LINE__, "Not all fields have been assigned values.", node, nullptr);
+                throw TreeException(__FILE__, __LINE__,
+                                    "Not all fields have been initialized in structure '" +
+                                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", path)) +
+                                        "': " + std::to_string(fieldNameSet.size()) + " of " +
+                                        std::to_string(structureDefinition->Fields().GetAllItems().size()) +
+                                        " fields provided.",
+                                    node, nullptr);
             }
         }
         else
         {
-            spdlog::error("The structure is not defined. Qualified name: '{}'",
-                          Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", path)));
-
-            throw TreeException(__FILE__, __LINE__, "The structure is not defined.",
+            throw TreeException(__FILE__, __LINE__,
+                                "Structure '" + Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", path)) +
+                                    "' is not defined.",
                                 static_cast<const Expression *>(node), nullptr);
         }
     }
     else
     {
-        spdlog::error("The object being instantiated is not recognized as a structure. The object type is '{}'.",
-                      Utility::EnumToString(type->GetTypeCode()));
-
-        throw TreeException(__FILE__, __LINE__, "The object being instantiated is not recognized as a structure.",
+        throw TreeException(__FILE__, __LINE__,
+                            "Cannot instantiate type '" + Utility::EnumToString(type->GetTypeCode()) +
+                                "': only structures can be instantiated with 'new'.",
                             static_cast<const Expression *>(node), nullptr);
     }
 
@@ -531,9 +553,11 @@ const Type *TypeChecker::VisitMember(const MemberExpression *node, Scope<const T
         }
         else
         {
-            spdlog::error("The field '{}' is not defined.", Utility::UTF32ToUTF8(node->FieldName()));
-
-            throw TreeException(__FILE__, __LINE__, "The field is not defined.", node, nullptr);
+            throw TreeException(
+                __FILE__, __LINE__,
+                "Field '" + Utility::UTF32ToUTF8(node->FieldName()) + "' is not defined in structure '" +
+                    Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                node, nullptr);
         }
     }
     else
@@ -542,8 +566,10 @@ const Type *TypeChecker::VisitMember(const MemberExpression *node, Scope<const T
         spdlog::error("The type of object that the expression is trying to access is not supported.");
 
         throw TreeException(__FILE__, __LINE__,
-                            "The type of object that the expression is trying to access is not supported.", node,
-                            nullptr);
+                            "Cannot access field '" + Utility::UTF32ToUTF8(node->FieldName()) + "' on type '" +
+                                Utility::EnumToString(type->GetTypeCode()) +
+                                "'. Member access is only supported on structures.",
+                            node, nullptr);
     }
 }
 
@@ -560,13 +586,13 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
     /* Declare the types of global variables. */
     for (const auto &varDecl : top->GlobalVariables().GetAllItems())
     {
-        scope->Declare(varDecl->Name(), varDecl->GetType());
+        scope->Declare(varDecl->Name(), ResolveTypeSyntax(varDecl->GetTypeSyntax()));
     }
 
     /* Declare the types of functions. */
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
-        CallableType *callableType = funcDecl->GetCallableType(Types);
+        CallableType *callableType = BuildCallableType(funcDecl);
         scope->Declare(funcDecl->Name(), callableType);
     }
 
@@ -586,6 +612,10 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
                                 "declared function type.",
                                 funcDecl, nullptr);
         }
+        else
+        {
+            Register(funcDecl, declarationType);
+        }
     }
 
     for (const auto &current : top->Children().GetAllItems())
@@ -601,7 +631,8 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
 {
     Scope<const Type *> *scope(parent);
     const Type *initializerType = Visit(node->Initializer(), scope);
-    if (TypeFactory::AreTypesEqual(node->GetType(), initializerType))
+    const Type *declaredType = ResolveTypeSyntax(node->GetTypeSyntax());
+    if (TypeFactory::AreTypesEqual(declaredType, initializerType))
     {
         scope->Declare(node->Name(), initializerType);
         Register(node, initializerType);
@@ -610,36 +641,17 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
         std::u32string initializerName = node->Name() + U"#Initializer";
         LambdaExpression *initializer = expressionFactory.Create<LambdaExpression>(
             node->Initializer()->GetSourceRange(), initializerName, node->Initializer(),
-            std::vector<ParameterExpression *>{}, initializerType, std::vector<Annotation>{});
+            std::vector<ParameterExpression *>{}, nullptr, std::vector<Annotation>{});
         current->Functions().AddItem(initializerName, initializer);
-        parent->Declare(initializerName, initializer->GetCallableType(Types));
+        parent->Declare(initializerName, Types.CreateCallableType({}, initializerType));
     }
     else
     {
-        spdlog::error("The value assigned to global variable '{}' does not match its "
-                      "declared type.",
-                      Utility::UTF32ToUTF8(node->Name()));
-
-        throw TreeException(__FILE__, __LINE__, "The assigned value does not match the declared variable type.",
+        throw TreeException(__FILE__, __LINE__,
+                            "Global variable '" + Utility::UTF32ToUTF8(node->Name()) + "' declared as '" +
+                                Utility::EnumToString(declaredType->GetTypeCode()) + "' but initialized with '" +
+                                Utility::EnumToString(initializerType->GetTypeCode()) + "'.",
                             static_cast<const Expression *>(node), nullptr);
-    }
-}
-
-const Type *TypeChecker::VisitType(const Type *type)
-{
-    if (type->GetTypeCode() == TypeCode::Structure)
-    {
-        const StructureType *structureType = static_cast<const StructureType *>(type);
-
-        auto path = structureType->QualifiedName();
-        Namespace *top = namespaceStack.top();
-        StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, path);
-
-        return structureDefinition->GetType();
-    }
-    else
-    {
-        return type;
     }
 }
 
@@ -709,6 +721,219 @@ bool TypeChecker::CheckFunctionType(const Type *declaration, const Type *actual)
         }
 
         return false;
+    }
+}
+
+const Type *TypeChecker::ResolveTypeSyntax(const TypeSyntax *typeSyntax)
+{
+    if (typeSyntax == nullptr)
+    {
+        return TypeFactory::CreateBasicType(TypeCode::Unknown);
+    }
+
+    const auto &qualifiedName = typeSyntax->QualifiedName();
+    if (qualifiedName.size() == 1)
+    {
+        const std::u32string &name = qualifiedName.front();
+        if (name == U"Int")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Int32);
+        }
+        else if (name == U"Long")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Int64);
+        }
+        else if (name == U"Bool")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Boolean);
+        }
+        else if (name == U"Float")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Float32);
+        }
+        else if (name == U"Double")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Float64);
+        }
+        else if (name == U"Char")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Char);
+        }
+        else if (name == U"String")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::String);
+        }
+        else if (name == U"Void")
+        {
+            return TypeFactory::CreateBasicType(TypeCode::Empty);
+        }
+        else if (name == U"Array")
+        {
+            if (typeSyntax->Arguments().size() != 1)
+            {
+                throw TreeException(__FILE__, __LINE__, "Array type must have exactly one argument.", nullptr, nullptr);
+            }
+            return Types.CreateArrayType(ResolveTypeSyntax(typeSyntax->Arguments().front()));
+        }
+        else if (name == U"Func")
+        {
+            if (typeSyntax->Arguments().empty())
+            {
+                throw TreeException(__FILE__, __LINE__, "Func type must specify at least a return type.", nullptr,
+                                    nullptr);
+            }
+            std::vector<const Type *> argumentTypes;
+            argumentTypes.reserve(typeSyntax->Arguments().size() - 1);
+            for (size_t i = 0; i + 1 < typeSyntax->Arguments().size(); ++i)
+            {
+                argumentTypes.push_back(ResolveTypeSyntax(typeSyntax->Arguments().at(i)));
+            }
+            const Type *returnType = ResolveTypeSyntax(typeSyntax->Arguments().back());
+            return Types.CreateCallableType(argumentTypes, returnType);
+        }
+    }
+
+    Namespace *top = namespaceStack.top();
+    StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, qualifiedName);
+    if (structureDefinition == nullptr)
+    {
+        spdlog::error("The structure '{}' is not defined.",
+                      Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)));
+        throw TreeException(__FILE__, __LINE__,
+                            "Structure '" + Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)) +
+                                "' is not defined.",
+                            nullptr, nullptr);
+    }
+
+    return ResolveStructureDefinition(structureDefinition);
+}
+
+StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *structureDefinition)
+{
+    auto cacheIt = structureTypeCache.find(structureDefinition);
+    if (cacheIt != structureTypeCache.end())
+    {
+        return cacheIt->second;
+    }
+
+    StructureType *structureType = Types.CreateStructureType(structureDefinition->QualifiedName(), {}, {});
+    structureTypeCache[structureDefinition] = structureType;
+
+    Utility::OrderPreservingMap<std::u32string, const Type *> resolvedFields;
+    for (const std::u32string &fieldName : structureDefinition->Fields().GetAllKeys())
+    {
+        resolvedFields.AddItem(fieldName, ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(fieldName)));
+    }
+
+    structureType->SetFields(resolvedFields);
+
+    /* TODO: resolve interfaces */
+    return structureType;
+}
+
+CallableType *TypeChecker::BuildCallableType(const LambdaExpression *node)
+{
+    std::vector<const Type *> parameterTypes;
+    parameterTypes.reserve(node->Parameters().size());
+    for (const auto &parameter : node->Parameters())
+    {
+        parameterTypes.push_back(ResolveTypeSyntax(parameter->GetTypeSyntax()));
+    }
+    const Type *returnType = ResolveTypeSyntax(node->ReturnTypeSyntax());
+    return Types.CreateCallableType(parameterTypes, returnType);
+}
+const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<const Type *> *scope)
+{
+    const Type *right = Visit(node->Right(), scope);
+    if (node->Left()->NodeType() == ExpressionType::Parameter)
+    {
+        /* TODO: check if the variable is modifiable. */
+        const Type *left = Visit(node->Left(), scope);
+
+        if (TypeFactory::AreTypesEqual(left, right))
+        {
+            return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Parameter assignment type mismatch: expected '" +
+                                    Utility::EnumToString(left->GetTypeCode()) + "' but got '" +
+                                    Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                node, nullptr);
+        }
+    }
+    else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
+    {
+        /* TODO: check if the field is modifiable. */
+        const Type *left = Visit(node->Left(), scope);
+
+        if (TypeFactory::AreTypesEqual(left, right))
+        {
+            return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Member assignment type mismatch: expected '" +
+                                    Utility::EnumToString(left->GetTypeCode()) + "' but got '" +
+                                    Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                node, nullptr);
+        }
+    }
+    else if (node->Left()->NodeType() == ExpressionType::Call)
+    {
+        const CallExpression *callExpression = static_cast<const CallExpression *>(node->Left());
+        const Type *functionType = Visit(callExpression->Function(), scope);
+        if (functionType->GetTypeCode() == TypeCode::Array)
+        {
+            const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
+            if (callExpression->Arguments().size() != 1)
+            {
+                throw TreeException(__FILE__, __LINE__, "array assignment must have exactly one index argument.", node,
+                                    nullptr);
+            }
+            else
+            {
+                const Type *indexType = Visit(callExpression->Arguments().front(), scope);
+                if (indexType->GetTypeCode() != TypeCode::Int32)
+                {
+                    throw TreeException(__FILE__, __LINE__,
+                                        "Array index must be of type 'Int32', but got '" +
+                                            Utility::EnumToString(indexType->GetTypeCode()) + "'.",
+                                        node, nullptr);
+                }
+            }
+            if (TypeFactory::AreTypesEqual(arrayType->ElementType(), right))
+            {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "Array element assignment type mismatch: expected '" +
+                                        Utility::EnumToString(arrayType->ElementType()->GetTypeCode()) + "' but got '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "The left-hand side of the assignment is a call expression, but it's not an array "
+                                "access. It is currently not supported.",
+                                node, nullptr);
+        }
+    }
+    else
+    {
+        spdlog::error("Unsupported left side in assignment. Expected a parameter, but got: {}",
+                      Utility::EnumToString(node->Left()->NodeType()));
+
+        throw TreeException(__FILE__, __LINE__,
+                            "Unsupported left side in assignment. Expected a parameter, but got: " +
+                                Utility::EnumToString(node->Left()->NodeType()),
+                            node, nullptr);
     }
 }
 

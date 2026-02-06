@@ -3,6 +3,7 @@
 
 #include "Visitors/Visitor.hpp"
 #include <nlohmann/json.hpp>
+#include <string>
 
 namespace Cygni
 {
@@ -32,6 +33,9 @@ class ExpressionJsonSerializer : public ExpressionVisitor<Json>
     static Json SourceRangeToJson(const SourceRange &sourceRange);
     Json FieldInitializationToJson(const std::u32string &fieldName, const Expression *value);
     static Json ExpressionToJson(const Expression* node);
+
+  private:
+    static std::string TypeSyntaxToString(const TypeSyntax *typeSyntax);
 };
 
 }; /* namespace Visitors */

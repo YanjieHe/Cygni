@@ -53,7 +53,7 @@ std::vector<Token> Lexer::ReadAll()
         }
         else
         {
-            throw LexicalException(sourceCodeFile, line, column, U"unsupported token");
+            throw LexicalException(sourceCodeFile, line, column, U"unexpected character");
         }
         SkipWhitespaces();
     }
@@ -107,13 +107,18 @@ Token Lexer::ReadExponent()
 {
     Match(U'E', U'e');
 
+    if (IsEof())
+    {
+        throw LexicalException(sourceCodeFile, line, column, U"invalid exponent in floating-point literal");
+    }
+
     if (Peek() == U'+' || Peek() == U'-')
     {
         Consume();
     }
     if (IsEof() || !IsDigit(Peek()))
     {
-        throw LexicalException(sourceCodeFile, line, column, U"float literal");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid exponent in floating-point literal");
     }
     else
     {
@@ -143,7 +148,7 @@ void Lexer::ReadCharacter()
 {
     if (IsEof())
     {
-        throw LexicalException(sourceCodeFile, line, column, U"character literal");
+        throw LexicalException(sourceCodeFile, line, column, U"unterminated character literal");
     }
     else
     {
@@ -187,7 +192,7 @@ void Lexer::ReadHexadecimalEscapeSequence()
     }
     else
     {
-        throw LexicalException(sourceCodeFile, line, column, U"expecting an hex digit");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid hexadecimal escape sequence");
     }
 
     for (int i = 0; i < 3 && IsHexDigit(); i++)
@@ -202,7 +207,7 @@ void Lexer::ReadHexadecimalEscapeSequence()
     }
     catch (std::invalid_argument &)
     {
-        throw LexicalException(sourceCodeFile, line, column, U"wrong format for hex digit");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid hexadecimal escape sequence");
     }
 }
 
@@ -221,7 +226,7 @@ void Lexer::ReadUnicodeEscapeSequence()
             }
             else
             {
-                throw LexicalException(sourceCodeFile, line, column, U"expecting an hex digit");
+                throw LexicalException(sourceCodeFile, line, column, U"invalid unicode escape sequence");
             }
         }
     }
@@ -237,13 +242,13 @@ void Lexer::ReadUnicodeEscapeSequence()
             }
             else
             {
-                throw LexicalException(sourceCodeFile, line, column, U"expecting an hex digit");
+                throw LexicalException(sourceCodeFile, line, column, U"invalid unicode escape sequence");
             }
         }
     }
     else
     {
-        throw LexicalException(sourceCodeFile, line, column, U"expecting 'u' or 'U'");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid unicode escape sequence");
     }
     try
     {
@@ -252,7 +257,7 @@ void Lexer::ReadUnicodeEscapeSequence()
     }
     catch (std::invalid_argument &)
     {
-        throw LexicalException(sourceCodeFile, line, column, U"wrong format for hex digit");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid unicode escape sequence");
     }
 }
 
@@ -287,7 +292,7 @@ Token Lexer::ReadString()
             Forward();
             if (IsEof())
             {
-                throw LexicalException(sourceCodeFile, line, column, U"string literal");
+                throw LexicalException(sourceCodeFile, line, column, U"unterminated string literal");
             }
             else
             {
@@ -302,14 +307,14 @@ Token Lexer::ReadString()
     }
     if (IsEof())
     {
-        throw LexicalException(sourceCodeFile, line, column, U"string literal");
+        throw LexicalException(sourceCodeFile, line, column, U"unterminated string literal");
     }
     else
     {
         Forward();
         if (builder.size() > 65535)
         {
-            throw LexicalException(sourceCodeFile, line, column, U"string literal is too long");
+            throw LexicalException(sourceCodeFile, line, column, U"string literal exceeds maximum length");
         }
         else
         {
@@ -339,7 +344,7 @@ char32_t Lexer::UnescapedChar(char32_t c)
     case U'\\':
         return U'\\';
     default:
-        throw LexicalException(sourceCodeFile, line, column, U"unsupported escaped character");
+        throw LexicalException(sourceCodeFile, line, column, U"invalid escape sequence");
     }
 }
 
@@ -353,7 +358,7 @@ Token Lexer::ReadIdentifier()
     }
     if (builder.size() > 65535)
     {
-        throw LexicalException(sourceCodeFile, line, column, U"the identifier length is too long");
+        throw LexicalException(sourceCodeFile, line, column, U"identifier exceeds maximum length");
     }
     else
     {
@@ -375,7 +380,7 @@ Token Lexer::ReadOperator()
         }
         else
         {
-            throw LexicalException(sourceCodeFile, line, column, U"operator literal");
+            throw LexicalException(sourceCodeFile, line, column, U"invalid operator");
         }
     }
     else
@@ -395,7 +400,7 @@ Token Lexer::ReadOperator()
         }
         else
         {
-            throw LexicalException(sourceCodeFile, line, column, U"operator literal");
+            throw LexicalException(sourceCodeFile, line, column, U"invalid operator");
         }
     }
 }

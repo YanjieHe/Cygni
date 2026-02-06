@@ -27,6 +27,10 @@ class Namespace
     {
     }
 
+    Namespace *Parent()
+    {
+        return parent;
+    }
     const Namespace *Parent() const
     {
         return parent;

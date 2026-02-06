@@ -61,44 +61,50 @@ Namespace *NamespaceFactory::Search(Namespace *predecessor, const std::vector<st
 VariableDeclarationExpression *NamespaceFactory::SearchGlobalVariable(Namespace *current,
                                                                       const std::vector<std::u32string> &path)
 {
-    VariableDeclarationExpression *varDecl = SearchGlobalVariableRecursively(current, path, 0);
-
-    if (varDecl == nullptr)
+    /* Search upward through parent namespaces: current -> parent -> ... -> root */
+    Namespace *ns = current;
+    while (ns != nullptr)
     {
-        return SearchGlobalVariableRecursively(GetRoot(), path, 0);
+        VariableDeclarationExpression *varDecl = SearchGlobalVariableRecursively(ns, path, 0);
+        if (varDecl != nullptr)
+        {
+            return varDecl;
+        }
+        ns = ns->Parent();
     }
-    else
-    {
-        return varDecl;
-    }
+    return nullptr;
 }
 
 LambdaExpression *NamespaceFactory::SearchFunction(Namespace *current, const std::vector<std::u32string> &path)
 {
-    LambdaExpression *funcDecl = SearchFunctionRecursively(current, path, 0);
-
-    if (funcDecl == nullptr)
+    /* Search upward through parent namespaces: current -> parent -> ... -> root */
+    Namespace *ns = current;
+    while (ns != nullptr)
     {
-        return SearchFunctionRecursively(GetRoot(), path, 0);
+        LambdaExpression *funcDecl = SearchFunctionRecursively(ns, path, 0);
+        if (funcDecl != nullptr)
+        {
+            return funcDecl;
+        }
+        ns = ns->Parent();
     }
-    else
-    {
-        return funcDecl;
-    }
+    return nullptr;
 }
 
 StructureExpression *NamespaceFactory::SearchStructure(Namespace *current, const std::vector<std::u32string> &path)
 {
-    StructureExpression *structureDefinition = SearchStructureRecursively(current, path, 0);
-
-    if (structureDefinition == nullptr)
+    /* Search upward through parent namespaces: current -> parent -> ... -> root */
+    Namespace *ns = current;
+    while (ns != nullptr)
     {
-        return SearchStructureRecursively(GetRoot(), path, 0);
+        StructureExpression *structureDefinition = SearchStructureRecursively(ns, path, 0);
+        if (structureDefinition != nullptr)
+        {
+            return structureDefinition;
+        }
+        ns = ns->Parent();
     }
-    else
-    {
-        return structureDefinition;
-    }
+    return nullptr;
 }
 
 VariableDeclarationExpression *NamespaceFactory::SearchGlobalVariableRecursively(

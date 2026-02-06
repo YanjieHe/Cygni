@@ -17,6 +17,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
 {
   private:
     std::unordered_map<const Expression *, const Type *> nodeTypes;
+    std::unordered_map<const StructureExpression *, StructureType *> structureTypeCache;
     TypeFactory Types;
     NamespaceFactory &namespaceFactory;
     ExpressionFactory &expressionFactory;
@@ -46,11 +47,14 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
 
     void CheckGlobalVariable(const VariableDeclarationExpression *node, Scope<const Type *> *parent,
                              Namespace *current);
-    const Type* VisitType(const Type* type);
 
   private:
     const Type *Register(const Expression *node, const Type *type);
     bool CheckFunctionType(const Type *declaration, const Type *actual);
+    const Type *ResolveTypeSyntax(const TypeSyntax *typeSyntax);
+    StructureType *ResolveStructureDefinition(StructureExpression *structureDefinition);
+    CallableType *BuildCallableType(const LambdaExpression *node);
+    const Type* CheckAssignment(const BinaryExpression* node, Scope<const Type *> *scope);
 };
 
 }; /* namespace Visitors */
