@@ -4,6 +4,7 @@
 #include "SyntaxAnalysis/ParserException.hpp"
 #include "Utility/UTF32Functions.hpp"
 #include "Visitors/Compiler.hpp"
+#include "Visitors/CompilationException.hpp"
 #include "Visitors/ExpressionJsonSerializer.hpp"
 #include "Visitors/NameLocator.hpp"
 #include "Visitors/TypeChecker.hpp"
@@ -68,6 +69,8 @@ void Compile(std::string sourceFilePath, std::string targetFilePath)
         ByteCode byteCode;
         program.Compile(byteCode);
         byteCode.OutputToFile(targetFilePath);
+
+        spdlog::info("Compilation successful. Output written to: {}", targetFilePath);
     }
 }
 
@@ -99,6 +102,15 @@ void TryCompile(std::string sourceFilePath, std::string targetFilePath)
     {
         spdlog::error("Scope Exception: {}, Name: {}", ex.Message(), UTF32ToUTF8(ex.Name()));
     }
+    catch (CompilationException &ex)
+    {
+        spdlog::error("Compilation Exception: {}", ex.Message());
+        spdlog::error("Compiler source code file: {}, line: {}", ex.Source(), ex.Line());
+    }
+    catch (std::exception &ex)
+    {
+        spdlog::error("Unexpected error: {}", ex.what());
+    }
 }
 
 int main(int argc, char **argv)
@@ -109,8 +121,8 @@ int main(int argc, char **argv)
 
     std::string input_file_path;
     std::string output_file_path;
-    app.add_option("-i,--input", input_file_path, "Path to the input Cygni source file.")->required();
-    app.add_option("-o,--output", output_file_path, "Path to the output executable file.")->required();
+    app.add_option("-i,--input", input_file_path, "Path to the input Cygni source file (.cyg).")->required();
+    app.add_option("-o,--output", output_file_path, "Path to the output Flint bytecode file (.fbc).")->required();
 
     CLI11_PARSE(app, argc, argv);
 

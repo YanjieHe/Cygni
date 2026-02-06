@@ -230,6 +230,7 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
                 throw TreeException(__FILE__, __LINE__, "Unsupported binary expression type for boolean type operands.",
                                     node, nullptr);
             }
+            break;
         }
         case TypeCode::Char: {
             switch (node->NodeType())
@@ -647,11 +648,21 @@ void Compiler::VisitConditional(const ConditionalExpression *node, ByteCode &byt
     Visit(node->IfFalse(), byteCode, constantPool);
     int32_t location3 = static_cast<int32_t>(byteCode.GetBytes().size());
 
+    int32_t offset1 = location2 - location1;
+    int32_t offset2 = location3 - (location2 + sizeof(int16_t));
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
+        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    {
+        throw CompilationException(__FILE__, __LINE__,
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node,
+                                   nullptr);
+    }
+
     spdlog::debug("location 1: {}, location 2: {}, location 3: {}", location1, location2, location3);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location2 - location1), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
                                 byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location3 - (location2 + sizeof(int16_t))), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
                                 byteCode.GetBytes().begin() + location2);
 }
 
@@ -766,10 +777,19 @@ void Compiler::VisitWhileLoop(const WhileLoopExpression *node, ByteCode &byteCod
 
     Visit(node->Body(), byteCode, constantPool);
     byteCode.AddOp(OpCode::JUMP);
-    byteCode.AddI16(static_cast<int32_t>(label1.Location()) -
-                    (byteCode.Size() + static_cast<int32_t>(sizeof(int16_t))));
+    int32_t backwardOffset = static_cast<int32_t>(label1.Location()) -
+                             (byteCode.Size() + static_cast<int32_t>(sizeof(int16_t)));
+    int32_t forwardOffset = byteCode.Size() - static_cast<int32_t>(label2.Location() + sizeof(int16_t));
+    if (backwardOffset < MIN_JUMP_OFFSET || backwardOffset > MAX_JUMP_OFFSET ||
+        forwardOffset < MIN_JUMP_OFFSET || forwardOffset > MAX_JUMP_OFFSET)
+    {
+        throw CompilationException(__FILE__, __LINE__,
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node,
+                                   nullptr);
+    }
+    byteCode.AddI16(backwardOffset);
 
-    byteCode.Rewrite(label2, byteCode.Size() - static_cast<int32_t>(label2.Location() + sizeof(int16_t)));
+    byteCode.Rewrite(label2, forwardOffset);
 }
 
 void Compiler::VisitDefault(const DefaultExpression *node, ByteCode &byteCode,
@@ -1422,7 +1442,7 @@ int Compiler::EntryPoint() const
 Byte Compiler::AllocateConstant(std::vector<flint_bytecode::Constant> &constantPool,
                                 flint_bytecode::ConstantKind constantKind, std::any value)
 {
-    if (constantPool.size() >= 255)
+    if (constantPool.size() >= MAX_CONSTANT_POOL_SIZE)
     {
         spdlog::error("Constant pool size exceeds upper limit.");
 
@@ -1454,12 +1474,22 @@ void Compiler::CompileLogicalAnd(const BinaryExpression *node, ByteCode &byteCod
     byteCode.AddOp(OpCode::PUSH_I32_0);
     int32_t location4 = static_cast<int32_t>(byteCode.GetBytes().size());
 
+    int32_t offset1 = location3 - (location1 + sizeof(int16_t));
+    int32_t offset2 = location4 - (location2 + sizeof(int16_t));
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
+        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    {
+        throw CompilationException(__FILE__, __LINE__,
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node,
+                                   nullptr);
+    }
+
     spdlog::info("logical and: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
                  location3, location4);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location3 - (location1 + sizeof(int16_t))), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
                                 byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location4 - (location2 + sizeof(int16_t))), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
                                 byteCode.GetBytes().begin() + location2);
 }
 void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
@@ -1479,12 +1509,22 @@ void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode
     byteCode.AddOp(OpCode::PUSH_I32_1);
     int32_t location4 = static_cast<int32_t>(byteCode.GetBytes().size());
 
+    int32_t offset1 = location3 - (location1 + sizeof(int16_t));
+    int32_t offset2 = location4 - (location2 + sizeof(int16_t));
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
+        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    {
+        throw CompilationException(__FILE__, __LINE__,
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node,
+                                   nullptr);
+    }
+
     spdlog::info("logical or: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
                  location3, location4);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location3 - (location1 + sizeof(int16_t))), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
                                 byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(location4 - (location2 + sizeof(int16_t))), true,
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
                                 byteCode.GetBytes().begin() + location2);
 }
 }; /* namespace Visitors */

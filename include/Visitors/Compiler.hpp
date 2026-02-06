@@ -7,6 +7,7 @@
 #include "Visitors/Scope.hpp"
 #include "Visitors/TypeChecker.hpp"
 #include "Visitors/Visitor.hpp"
+#include <cstdint>
 
 namespace Cygni
 {
@@ -87,6 +88,10 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
     void CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
                            std::vector<flint_bytecode::Constant> &constantPool);
 };
+
+inline const size_t MAX_CONSTANT_POOL_SIZE = 255;
+inline const int32_t MAX_JUMP_OFFSET = 32767;
+inline const int32_t MIN_JUMP_OFFSET = -32768;
 
 }; /* namespace Visitors */
 }; /* namespace Cygni */
