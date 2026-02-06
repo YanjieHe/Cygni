@@ -185,6 +185,16 @@ class StructureType : public Type
     {
         return interfaces;
     }
+
+    void SetFields(const Utility::OrderPreservingMap<std::u32string, const Type *> &newFields)
+    {
+        fields = newFields;
+    }
+
+    void SetInterfaces(const std::vector<const InterfaceType *> &newInterfaces)
+    {
+        interfaces = newInterfaces;
+    }
 };
 
 class TypeFactory

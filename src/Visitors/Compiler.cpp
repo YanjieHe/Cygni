@@ -43,7 +43,7 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
         {
             spdlog::error("Binary operation type mismatch.");
 
-            throw std::runtime_error("Binary operation type mismatch");
+            throw CompilationException(__FILE__, __LINE__, "Binary operation type mismatch", node, nullptr);
         }
         switch (typeCode)
         {
@@ -84,7 +84,8 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
                 byteCode.AddOp(OpCode::NE_I32);
                 break;
             default:
-                throw std::runtime_error("Unsupported binary operator for integer 32 type.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported binary operator for integer 32 type.", node,
+                                           nullptr);
             }
             break;
         }
@@ -125,7 +126,8 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
                 byteCode.AddOp(OpCode::NE_I64);
                 break;
             default:
-                throw std::runtime_error("Unsupported binary operator for integer 64 type.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported binary operator for integer 64 type.", node,
+                                           nullptr);
             }
             break;
         }
@@ -166,7 +168,8 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
                 byteCode.AddOp(OpCode::NE_F32);
                 break;
             default:
-                throw std::runtime_error("Unsupported binary operator for float 32 type.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported binary operator for float 32 type.", node,
+                                           nullptr);
             }
             break;
         }
@@ -207,7 +210,8 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
                 byteCode.AddOp(OpCode::LE_F64);
                 break;
             default:
-                throw std::runtime_error("Unsupported binary operator for float 64 type.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported binary operator for float 64 type.", node,
+                                           nullptr);
             }
             break;
         }
@@ -258,7 +262,7 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
             break;
         }
         default: {
-            throw std::runtime_error("Unsupported binary expression type");
+            throw CompilationException(__FILE__, __LINE__, "Unsupported binary expression type", node, nullptr);
         }
         }
     }
@@ -306,7 +310,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
                 break;
             }
             default: {
-                throw std::runtime_error("Cannot convert the type.");
+                throw CompilationException(__FILE__, __LINE__, "Cannot convert the type.", node, nullptr);
             }
             }
             break;
@@ -331,7 +335,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
                 break;
             }
             default: {
-                throw std::runtime_error("Cannot convert the type.");
+                throw CompilationException(__FILE__, __LINE__, "Cannot convert the type.", node, nullptr);
             }
             }
             break;
@@ -355,7 +359,7 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
                 break;
             }
             default: {
-                throw std::runtime_error("Cannot convert the type.");
+                throw CompilationException(__FILE__, __LINE__, "Cannot convert the type.", node, nullptr);
             }
             }
             break;
@@ -379,19 +383,19 @@ void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
                 break;
             }
             default: {
-                throw std::runtime_error("Cannot convert the type.");
+                throw CompilationException(__FILE__, __LINE__, "Cannot convert the type.", node, nullptr);
             }
             }
             break;
         }
         default: {
-            throw std::runtime_error("Cannot convert the type.");
+            throw CompilationException(__FILE__, __LINE__, "Cannot convert the type.", node, nullptr);
         }
         }
     }
     else
     {
-        throw std::runtime_error("Unsupported unary expression type");
+        throw CompilationException(__FILE__, __LINE__, "Unsupported unary expression type", node, nullptr);
     }
 }
 
@@ -549,7 +553,8 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
             break;
         }
         default: {
-            throw std::runtime_error("Unsupported function variable parameter expression type");
+            throw CompilationException(__FILE__, __LINE__, "Unsupported function variable parameter expression type",
+                                       node, nullptr);
         }
         }
     }
@@ -592,7 +597,8 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
             break;
         }
         default: {
-            throw std::runtime_error("Unsupported global variable parameter expression type");
+            throw CompilationException(__FILE__, __LINE__, "Unsupported global variable parameter expression type",
+                                       node, nullptr);
         }
         }
     }
@@ -612,7 +618,7 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
         spdlog::error("Unsupported parameter expression location kind. Parameter name: '{}'.",
                       Utility::UTF32ToUTF8(node->Name()));
 
-        throw std::runtime_error("Unsupported parameter expression location kind");
+        throw CompilationException(__FILE__, __LINE__, "Unsupported parameter expression location kind", node, nullptr);
     }
 }
 
@@ -691,7 +697,8 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
         default: {
             spdlog::error("Unsupported array element type for array access.");
 
-            throw std::runtime_error("Unsupported array element type for array access.");
+            throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array access.", node,
+                                       nullptr);
         }
         }
     }
@@ -727,7 +734,8 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
             else
             {
                 spdlog::error("Unsupported call expression location kind.");
-                throw std::runtime_error("Unsupported call expression location kind.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported call expression location kind.", node,
+                                           nullptr);
             }
         }
         else
@@ -735,7 +743,7 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
             spdlog::error("Unsupported call expression type. Got node type: {}",
                           Utility::EnumToString(node->Function()->NodeType()));
 
-            throw std::runtime_error("Unsupported call expression type");
+            throw CompilationException(__FILE__, __LINE__, "Unsupported call expression type", node, nullptr);
         }
     }
 }
@@ -743,7 +751,7 @@ void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
 void Compiler::VisitLambda(const LambdaExpression *node, ByteCode &byteCode,
                            std::vector<flint_bytecode::Constant> &constantPool)
 {
-    throw std::runtime_error("This function is not implemented");
+    throw CompilationException(__FILE__, __LINE__, "This function is not implemented", node, nullptr);
 }
 
 void Compiler::VisitWhileLoop(const WhileLoopExpression *node, ByteCode &byteCode,
@@ -943,7 +951,7 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
             default: {
                 spdlog::error("Unsupported field type: '{}'.", Utility::EnumToString(fieldType->GetTypeCode()));
 
-                throw std::runtime_error("Unsupported field type");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported field type", node, nullptr);
             }
             }
         }
@@ -951,14 +959,14 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
         {
             spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(node->FieldName()));
 
-            throw std::runtime_error("Field doesn't exist.");
+            throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
         }
     }
     else
     {
         spdlog::error("Unsupported type for member access: '{}'.", Utility::EnumToString(type->GetTypeCode()));
 
-        throw std::runtime_error("Unsupported tyep for member access.");
+        throw CompilationException(__FILE__, __LINE__, "Unsupported type for member access.", node, nullptr);
     }
 }
 
@@ -1006,14 +1014,18 @@ void Compiler::CompileAssignment(const BinaryExpression *node, ByteCode &byteCod
             default: {
                 spdlog::error("Unsupported array element type for array assignment.");
 
-                throw std::runtime_error("Unsupported array element type for array assignment.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array assignment.",
+                                           node, nullptr);
             }
             }
+            return; // Array assignment handled, exit the function
         }
         else
         {
-            throw std::runtime_error("The left-hand side of the assignment is a call expression, but it's not an array "
-                                     "access. It is currently not supported.");
+            throw CompilationException(__FILE__, __LINE__,
+                                       "The left-hand side of the assignment is a call expression, but it's not an "
+                                       "array access. It is currently not supported.",
+                                       node, nullptr);
         }
     }
     else

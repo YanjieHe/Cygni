@@ -216,7 +216,6 @@ void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
     scope->Declare(GLOBAL_VARIABLE_COUNT, NameInfo(LocationKind::GlobalVariableCount, 0));
     scope->Declare(GLOBAL_FUNCTION_COUNT, NameInfo(LocationKind::GlobalFunctionCount, 0));
     scope->Declare(GLOBAL_NATIVE_FUNCTION_COUNT, NameInfo(LocationKind::GlobalNativeFunctionCount, 0));
-    scope->Declare(GLOBAL_NATIVE_FUNCTION_COUNT, NameInfo(LocationKind::GlobalNativeFunctionCount, 0));
     scope->Declare(GLOBAL_STRUCTURE_COUNT, NameInfo(LocationKind::GlobalStructureCount, 0));
 }
 void NameLocator::VisitNew(const NewExpression *node, Scope<NameInfo> *scope)

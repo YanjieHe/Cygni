@@ -10,47 +10,18 @@ using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 using namespace Cygni::Visitors;
 
-TEST_CASE("test variable locating", "[Variable]")
+static Parser CreateParser(const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
-
-    Lexer lexer(sourceCodeFile, U"func Add(x: Int, y: Int): Int { var z = x + y; z; }");
-
+    Lexer lexer(sourceCodeFile, sourceCode);
     std::vector<Token> tokens = lexer.ReadAll();
 
-    std::vector<TokenTag> expectedTags = {TokenTag::Func,
-                                          TokenTag::Identifier,
-                                          TokenTag::LeftParenthesis,
-                                          TokenTag::Identifier,
-                                          TokenTag::Colon,
-                                          TokenTag::Identifier,
-                                          TokenTag::Comma,
-                                          TokenTag::Identifier,
-                                          TokenTag::Colon,
-                                          TokenTag::Identifier,
-                                          TokenTag::RightParenthesis,
-                                          TokenTag::Colon,
-                                          TokenTag::Identifier,
-                                          TokenTag::LeftBrace,
-                                          TokenTag::Var,
-                                          TokenTag::Identifier,
-                                          TokenTag::Assign,
-                                          TokenTag::Identifier,
-                                          TokenTag::Add,
-                                          TokenTag::Identifier,
-                                          TokenTag::Semicolon,
-                                          TokenTag::Identifier,
-                                          TokenTag::Semicolon,
-                                          TokenTag::RightBrace,
-                                          TokenTag::Eof};
+    return Parser(tokens, sourceCodeFile);
+}
 
-    REQUIRE(tokens.size() == expectedTags.size());
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        REQUIRE(tokens.at(i).tag == expectedTags.at(i));
-    }
-
-    Parser parser(tokens, sourceCodeFile);
+TEST_CASE("test variable locating", "[Variable]")
+{
+    Parser parser = CreateParser(U"func Add(x: Int, y: Int): Int { var z = x + y; z; }");
     auto exp = parser.FunctionDeclarationStatement({});
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 

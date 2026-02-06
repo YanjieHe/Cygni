@@ -17,6 +17,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
 {
   private:
     std::unordered_map<const Expression *, const Type *> nodeTypes;
+    std::unordered_map<const StructureExpression *, StructureType *> structureTypeCache;
     TypeFactory Types;
     NamespaceFactory &namespaceFactory;
     ExpressionFactory &expressionFactory;
@@ -53,6 +54,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
     const Type *ResolveTypeSyntax(const TypeSyntax *typeSyntax);
     StructureType *ResolveStructureDefinition(StructureExpression *structureDefinition);
     CallableType *BuildCallableType(const LambdaExpression *node);
+    const Type* CheckAssignment(const BinaryExpression* node, Scope<const Type *> *scope);
 };
 
 }; /* namespace Visitors */
