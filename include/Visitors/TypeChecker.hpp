@@ -7,7 +7,6 @@
 #include "Visitors/Visitor.hpp"
 #include <stack>
 
-
 namespace Cygni
 {
 namespace Visitors
@@ -18,6 +17,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
   private:
     std::unordered_map<const Expression *, const Type *> nodeTypes;
     std::unordered_map<const StructureExpression *, StructureType *> structureTypeCache;
+    std::unordered_map<const InterfaceExpression *, InterfaceType *> interfaceTypeCache;
     TypeFactory Types;
     NamespaceFactory &namespaceFactory;
     ExpressionFactory &expressionFactory;
@@ -53,8 +53,14 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
     bool CheckFunctionType(const Type *declaration, const Type *actual);
     const Type *ResolveTypeSyntax(const TypeSyntax *typeSyntax);
     StructureType *ResolveStructureDefinition(StructureExpression *structureDefinition);
+    InterfaceType *ResolveInterfaceDefinition(InterfaceExpression *interfaceDefinition);
     CallableType *BuildCallableType(const LambdaExpression *node);
-    const Type* CheckAssignment(const BinaryExpression* node, Scope<const Type *> *scope);
+    const Type *CheckAssignment(const BinaryExpression *node, Scope<const Type *> *scope);
+    const Type *VisitMethodCall(const CallExpression *node, Scope<const Type *> *scope);
+    const Type *CheckArguments(const CallExpression *node, const Type *callableType, Scope<const Type *> *scope);
+    void CheckInterfaceImplementation(const StructureExpression *node, const StructureType *structureType,
+                                      const InterfaceType *interfaceType);
+    std::vector<const InterfaceType *> GetAllImplementedInterfaces(const StructureType *structureType);
 };
 
 }; /* namespace Visitors */

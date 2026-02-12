@@ -554,3 +554,205 @@ TEST_CASE("test nested blocks with variable scoping", "[Block][Variable]")
     const Type *type = typeChecker.Visit(exp, &scope);
     REQUIRE(type->GetTypeCode() == TypeCode::Int32);
 }
+
+// ============================================================================
+// Structure and Method Tests
+// ============================================================================
+
+TEST_CASE("type check struct with fields only", "[Structure]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Point { x: Int; y: Int; } "
+        U"func Main(): Int { var p = new Point { x = 1; y = 2; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method returns correct type", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; "
+        U"  func get(): Int { this.value; } } "
+        U"func Main(): Int { var c = new Counter { value = 10; }; c.get(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method with parameters", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Calc { value: Int; "
+        U"  func add(x: Int): Int { this.value + x; } } "
+        U"func Main(): Int { var c = new Calc { value = 5; }; c.add(3); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method this field access", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Rect { width: Int; height: Int; "
+        U"  func area(): Int { this.width * this.height; } } "
+        U"func Main(): Int { var r = new Rect { width = 3; height = 4; }; r.area(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check method call with wrong argument count throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Adder { base: Int; "
+        U"  func add(x: Int): Int { this.base + x; } } "
+        U"func Main(): Int { var a = new Adder { base = 1; }; a.add(1, 2); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method call with wrong argument type throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Adder { base: Int; "
+        U"  func add(x: Int): Int { this.base + x; } } "
+        U"func Main(): Int { var a = new Adder { base = 1; }; a.add(3.14); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check calling non-existent method throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Point { x: Int; } "
+        U"func Main(): Int { var p = new Point { x = 1; }; p.nonexistent(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method return type mismatch throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; "
+        U"  func getAsDouble(): Double { this.value; } } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method call on non-struct throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { func Main(): Int { var n = 10; n.increment(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check struct with multiple methods", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Vec2 { x: Int; y: Int; "
+        U"  func getX(): Int { this.x; } "
+        U"  func getY(): Int { this.y; } "
+        U"  func sum(): Int { this.x + this.y; } } "
+        U"func Main(): Int { var v = new Vec2 { x = 3; y = 4; }; v.sum(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+// ============================================================================
+// New Expression Error Tests
+// ============================================================================
+
+TEST_CASE("type check new with field type mismatch throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Point { x: Int; y: Int; } "
+        U"func Main(): Int { var p = new Point { x = 1; y = 3.14; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check new with missing fields throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Point { x: Int; y: Int; } "
+        U"func Main(): Int { var p = new Point { x = 1; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check new with non-existent field throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Point { x: Int; y: Int; } "
+        U"func Main(): Int { var p = new Point { x = 1; y = 2; z = 3; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+// ============================================================================
+// Field Access Type Tests
+// ============================================================================
+
+TEST_CASE("type check field access returns correct type", "[Structure][MemberAccess]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Pair { first: Int; second: Double; } "
+        U"func GetFirst(): Int { var p = new Pair { first = 1; second = 2.0; }; p.first; } "
+        U"func GetSecond(): Double { var p = new Pair { first = 1; second = 2.0; }; p.second; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}

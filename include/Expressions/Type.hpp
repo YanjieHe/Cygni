@@ -130,11 +130,13 @@ class InterfaceType : public Type
   private:
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, const CallableType *> methods;
+    std::vector<const InterfaceType *> baseInterfaces;
 
   public:
     InterfaceType(const std::vector<std::u32string> &qualifiedName,
-                  const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods)
-        : qualifiedName{qualifiedName}, methods{methods}
+                  const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+                  const std::vector<const InterfaceType *> &baseInterfaces)
+        : qualifiedName{qualifiedName}, methods{methods}, baseInterfaces{baseInterfaces}
     {
     }
     TypeCode GetTypeCode() const override
@@ -149,6 +151,18 @@ class InterfaceType : public Type
     {
         return methods;
     }
+    const std::vector<const InterfaceType *> &BaseInterfaces() const
+    {
+        return baseInterfaces;
+    }
+    void SetMethods(const Utility::OrderPreservingMap<std::u32string, const CallableType *> &newMethods)
+    {
+        methods = newMethods;
+    }
+    void SetBaseInterfaces(const std::vector<const InterfaceType *> &newBaseInterfaces)
+    {
+        baseInterfaces = newBaseInterfaces;
+    }
 };
 
 class StructureType : public Type
@@ -156,13 +170,15 @@ class StructureType : public Type
   private:
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, const Type *> fields;
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> methods;
     std::vector<const InterfaceType *> interfaces;
 
   public:
     StructureType(const std::vector<std::u32string> &qualifiedName,
                   const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+                  const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
                   const std::vector<const InterfaceType *> &interfaces)
-        : qualifiedName{qualifiedName}, fields{fields}, interfaces{interfaces}
+        : qualifiedName{qualifiedName}, fields{fields}, methods{methods}, interfaces{interfaces}
     {
     }
 
@@ -181,6 +197,11 @@ class StructureType : public Type
         return fields;
     }
 
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &Methods() const
+    {
+        return methods;
+    }
+
     const std::vector<const InterfaceType *> &Interfaces() const
     {
         return interfaces;
@@ -189,6 +210,11 @@ class StructureType : public Type
     void SetFields(const Utility::OrderPreservingMap<std::u32string, const Type *> &newFields)
     {
         fields = newFields;
+    }
+
+    void SetMethods(const Utility::OrderPreservingMap<std::u32string, const CallableType *> &newMethods)
+    {
+        methods = newMethods;
     }
 
     void SetInterfaces(const std::vector<const InterfaceType *> &newInterfaces)
@@ -219,7 +245,11 @@ class TypeFactory
     CallableType *CreateCallableType(std::vector<const Type *> arguments, const Type *returnType);
     StructureType *CreateStructureType(const std::vector<std::u32string> &qualifiedName,
                                        const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+                                       const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
                                        const std::vector<const InterfaceType *> &implementedInterfaces);
+    InterfaceType *CreateInterfaceType(const std::vector<std::u32string> &qualifiedName,
+                                       const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+                                       const std::vector<const InterfaceType *> &baseInterfaces);
 
   private:
     static bool AreOrderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b);

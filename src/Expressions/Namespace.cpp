@@ -107,6 +107,22 @@ StructureExpression *NamespaceFactory::SearchStructure(Namespace *current, const
     return nullptr;
 }
 
+InterfaceExpression *NamespaceFactory::SearchInterface(Namespace *current, const std::vector<std::u32string> &path)
+{
+    /* Search upward through parent namespaces: current -> parent -> ... -> root */
+    Namespace *ns = current;
+    while (ns != nullptr)
+    {
+        InterfaceExpression *interfaceExpression = SearchInterfaceRecursively(ns, path, 0);
+        if (interfaceExpression != nullptr)
+        {
+            return interfaceExpression;
+        }
+        ns = ns->Parent();
+    }
+    return nullptr;
+}
+
 VariableDeclarationExpression *NamespaceFactory::SearchGlobalVariableRecursively(
     Namespace *current, const std::vector<std::u32string> &path, int i)
 {
@@ -212,6 +228,44 @@ StructureExpression *NamespaceFactory::SearchStructureRecursively(Namespace *cur
         {
 
             return SearchStructureRecursively(current->Children().GetItemByKey(name), path, i + 1);
+        }
+        else
+        {
+
+            return nullptr;
+        }
+    }
+}
+
+InterfaceExpression *NamespaceFactory::SearchInterfaceRecursively(Namespace *current,
+                                                                  const std::vector<std::u32string> &path, int i)
+{
+    int n = static_cast<int>(path.size());
+    const std::u32string &name = path.at(static_cast<size_t>(i));
+    if (i == n)
+    {
+        /* Searched to the end. */
+        return nullptr;
+    }
+    else if (i == n - 1)
+    {
+        if (current->Interfaces().ContainsKey(name))
+        {
+
+            return current->Interfaces().GetItemByKey(name);
+        }
+        else
+        {
+
+            return nullptr;
+        }
+    }
+    else
+    {
+        if (current->Children().ContainsKey(name))
+        {
+
+            return SearchInterfaceRecursively(current->Children().GetItemByKey(name), path, i + 1);
         }
         else
         {

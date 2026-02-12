@@ -21,6 +21,7 @@ class Namespace
     Utility::OrderPreservingMap<std::u32string, VariableDeclarationExpression *> globalVariables;
     Utility::OrderPreservingMap<std::u32string, LambdaExpression *> functions;
     Utility::OrderPreservingMap<std::u32string, StructureExpression *> structures;
+    Utility::OrderPreservingMap<std::u32string, InterfaceExpression *> interfaces;
 
   public:
     Namespace(Namespace *parent, std::u32string name) : parent{parent}, name{name}
@@ -54,6 +55,10 @@ class Namespace
     Utility::OrderPreservingMap<std::u32string, StructureExpression *> &Structures()
     {
         return structures;
+    }
+    Utility::OrderPreservingMap<std::u32string, InterfaceExpression *> &Interfaces()
+    {
+        return interfaces;
     }
     std::vector<std::u32string> GetFullQualifiedName();
 };
@@ -103,12 +108,14 @@ class NamespaceFactory
     VariableDeclarationExpression *SearchGlobalVariable(Namespace *current, const std::vector<std::u32string> &path);
     LambdaExpression *SearchFunction(Namespace *current, const std::vector<std::u32string> &path);
     StructureExpression *SearchStructure(Namespace *current, const std::vector<std::u32string> &path);
+    InterfaceExpression *SearchInterface(Namespace *current, const std::vector<std::u32string> &path);
 
   private:
     VariableDeclarationExpression *SearchGlobalVariableRecursively(Namespace *current,
                                                                    const std::vector<std::u32string> &path, int i);
     LambdaExpression *SearchFunctionRecursively(Namespace *current, const std::vector<std::u32string> &path, int i);
     StructureExpression *SearchStructureRecursively(Namespace *current, const std::vector<std::u32string> &path, int i);
+    InterfaceExpression *SearchInterfaceRecursively(Namespace *current, const std::vector<std::u32string> &path, int i);
 };
 
 }; /* namespace Expressions */

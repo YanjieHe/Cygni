@@ -19,69 +19,74 @@ using namespace Cygni::Visitors;
 using namespace Cygni::Utility;
 using namespace Cygni::Compilation;
 
-void Compile(std::string sourceFilePath, std::string targetFilePath)
+void Compile(const std::vector<std::string> &sourceFilePaths, const std::string &targetFilePath)
 {
-    std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>(sourceFilePath);
+    CompilationContext compilationContext;
 
-    std::ifstream file(sourceFilePath);
+    // Phase 1: Parse all source files into the same namespace tree
+    for (const auto &sourceFilePath : sourceFilePaths)
+    {
+        std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>(sourceFilePath);
 
-    if (!file.is_open())
-    {
-        spdlog::error("Failed to open the file: {}", sourceFilePath);
-    }
-    else
-    {
+        std::ifstream file(sourceFilePath);
+        if (!file.is_open())
+        {
+            throw std::runtime_error("Failed to open the file: " + sourceFilePath);
+        }
+
         std::string sourceCode((std::istreambuf_iterator<char>(file)), (std::istreambuf_iterator<char>()));
-
         file.close();
-        Lexer lexer(sourceCodeFile, UTF8ToUTF32(sourceCode));
 
+        Lexer lexer(sourceCodeFile, UTF8ToUTF32(sourceCode));
         std::vector<Token> tokens = lexer.ReadAll();
 
-        CompilationContext compilationContext;
         Parser parser(tokens, sourceCodeFile, compilationContext);
         parser.ParseNamespace();
-
-        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
-
-        Scope<const Type *> scope;
-        typeChecker.CheckNamespace(&scope);
-
-        Scope<NameInfo> nameInfoScope;
-        NameLocator nameLocator = NameLocator(parser.GetNamespaceFactory());
-        nameLocator.InitializeSymbolCounters(&nameInfoScope);
-        nameLocator.RegisterAllInfo(&nameInfoScope);
-        nameLocator.CheckNamespace(&nameInfoScope);
-
-        spdlog::info("Start compiling the program.");
-        spdlog::info("Global Variable Count: {}", nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
-        spdlog::info("Global Function Count: {}", nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
-        spdlog::info("Global Structure Count: {}", nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-
-        Compiler compiler(typeChecker, nameLocator, parser.GetNamespaceFactory());
-        std::vector<flint_bytecode::GlobalVariable> globalVariables(nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
-        std::vector<flint_bytecode::Function> functions(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
-        std::vector<flint_bytecode::NativeFunction> nativeFunctions(
-            nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
-        std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-        compiler.CompileNamespace(globalVariables, functions, nativeFunctions);
-        std::vector<flint_bytecode::NativeLibrary> nativeLibraries = compiler.GetNativeLibraries();
-        flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, nativeLibraries,
-                                                nativeFunctions, compiler.EntryPoint());
-
-        ByteCode byteCode;
-        program.Compile(byteCode);
-        byteCode.OutputToFile(targetFilePath);
-
-        spdlog::info("Compilation successful. Output written to: {}", targetFilePath);
     }
+
+    // Phase 2: Type check the entire namespace tree
+    TypeChecker typeChecker(compilationContext.GetNamespaceFactory(), compilationContext.GetExpressionFactory());
+    Scope<const Type *> scope;
+    typeChecker.CheckNamespace(&scope);
+
+    // Phase 3: Locate names
+    Scope<NameInfo> nameInfoScope;
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameInfoScope);
+    nameLocator.RegisterAllInfo(&nameInfoScope);
+    nameLocator.CheckNamespace(&nameInfoScope);
+
+    spdlog::info("Start compiling the program.");
+    spdlog::info("Source files: {}", sourceFilePaths.size());
+    spdlog::info("Global Variable Count: {}", nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
+    spdlog::info("Global Function Count: {}", nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
+    spdlog::info("Global Structure Count: {}", nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
+
+    // Phase 4: Compile
+    Compiler compiler(typeChecker, nameLocator, compilationContext.GetNamespaceFactory());
+    std::vector<flint_bytecode::GlobalVariable> globalVariables(nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
+    std::vector<flint_bytecode::Function> functions(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
+    std::vector<flint_bytecode::NativeFunction> nativeFunctions(
+        nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
+    std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
+    std::vector<flint_bytecode::NativeLibrary> nativeLibraries = compiler.GetNativeLibraries();
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, nativeLibraries, nativeFunctions,
+                                            compiler.EntryPoint());
+
+    // Phase 5: Output
+    ByteCode byteCode;
+    program.Compile(byteCode);
+    byteCode.OutputToFile(targetFilePath);
+
+    spdlog::info("Compilation successful. Output written to: {}", targetFilePath);
 }
 
-void TryCompile(std::string sourceFilePath, std::string targetFilePath)
+void TryCompile(const std::vector<std::string> &sourceFilePaths, const std::string &targetFilePath)
 {
     try
     {
-        Compile(sourceFilePath, targetFilePath);
+        Compile(sourceFilePaths, targetFilePath);
     }
     catch (LexicalException &ex)
     {
@@ -122,13 +127,13 @@ int main(int argc, char **argv)
 
     argv = app.ensure_utf8(argv);
 
-    std::string input_file_path;
+    std::vector<std::string> input_file_paths;
     std::string output_file_path;
-    app.add_option("-i,--input", input_file_path, "Path to the input Cygni source file (.cyg).")->required();
+    app.add_option("-i,--input", input_file_paths, "Paths to the input Cygni source files (.cyg).")->required();
     app.add_option("-o,--output", output_file_path, "Path to the output Flint bytecode file (.fbc).")->required();
 
     CLI11_PARSE(app, argc, argv);
 
-    TryCompile(input_file_path, output_file_path);
+    TryCompile(input_file_paths, output_file_path);
     return 0;
 }

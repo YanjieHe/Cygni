@@ -192,6 +192,14 @@ const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<c
         VariableDeclarationExpression *varDecl = namespaceFactory.SearchGlobalVariable(top, node->QualifiedName());
         if (varDecl != nullptr)
         {
+            /* If the variable's type was already resolved during CheckGlobalVariable
+               (in its own namespace context), reuse that cached type.
+               This avoids re-resolving type syntax under the wrong namespace. */
+            auto it = nodeTypes.find(varDecl);
+            if (it != nodeTypes.end())
+            {
+                return Register(node, it->second);
+            }
             const Type *type = ResolveTypeSyntax(varDecl->GetTypeSyntax());
 
             return Register(node, type);
@@ -199,6 +207,14 @@ const Type *TypeChecker::VisitParameter(const ParameterExpression *node, Scope<c
         LambdaExpression *funcDecl = namespaceFactory.SearchFunction(top, node->QualifiedName());
         if (funcDecl != nullptr)
         {
+            /* If the function's type was already resolved during CheckNamespace
+               (in its own namespace context), reuse that cached type.
+               This avoids re-resolving parameter types under the wrong namespace. */
+            auto it = nodeTypes.find(funcDecl);
+            if (it != nodeTypes.end())
+            {
+                return Register(node, it->second);
+            }
             CallableType *callableType = BuildCallableType(funcDecl);
 
             return Register(node, static_cast<const Type *>(callableType));
@@ -250,6 +266,34 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
     const Type *operand = Visit(node->Operand(), scope);
     switch (node->NodeType())
     {
+    case ExpressionType::UnaryPlus: {
+        if (operand->GetTypeCode() == TypeCode::Int32 || operand->GetTypeCode() == TypeCode::Int64 ||
+            operand->GetTypeCode() == TypeCode::Float32 || operand->GetTypeCode() == TypeCode::Float64)
+        {
+            return Register(node, operand);
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Unary plus operator requires a numeric operand, but got '" +
+                                    Utility::EnumToString(operand->GetTypeCode()) + "'.",
+                                node, nullptr);
+        }
+    }
+    case ExpressionType::UnaryMinus: {
+        if (operand->GetTypeCode() == TypeCode::Int32 || operand->GetTypeCode() == TypeCode::Int64 ||
+            operand->GetTypeCode() == TypeCode::Float32 || operand->GetTypeCode() == TypeCode::Float64)
+        {
+            return Register(node, operand);
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Unary minus operator requires a numeric operand, but got '" +
+                                    Utility::EnumToString(operand->GetTypeCode()) + "'.",
+                                node, nullptr);
+        }
+    }
     case ExpressionType::Not: {
         if (operand->GetTypeCode() == TypeCode::Boolean)
         {
@@ -311,66 +355,51 @@ const Type *TypeChecker::VisitUnary(const UnaryExpression *node, Scope<const Typ
 
 const Type *TypeChecker::VisitCall(const CallExpression *node, Scope<const Type *> *scope)
 {
-    auto callableType = Visit(node->Function(), scope);
-    if (callableType->GetTypeCode() == TypeCode::Callable)
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
     {
-        auto t = static_cast<const CallableType *>(callableType);
-        if (t->Arguments().size() == node->Arguments().size())
+        return VisitMethodCall(node, scope);
+    }
+    else
+    {
+        auto callableType = Visit(node->Function(), scope);
+        if (callableType->GetTypeCode() == TypeCode::Callable)
         {
-            for (size_t i = 0; i < node->Arguments().size(); i++)
+            return CheckArguments(node, callableType, scope);
+        }
+        else if (callableType->GetTypeCode() == TypeCode::Array)
+        {
+            auto arrayType = static_cast<const ArrayType *>(callableType);
+            if (node->Arguments().size() == 1)
             {
-                auto argType = Visit(node->Arguments().at(i), scope);
-                if (!TypeFactory::AreTypesEqual(argType, t->Arguments().at(i)))
+                auto indexType = Visit(node->Arguments().front(), scope);
+                if (indexType->GetTypeCode() == TypeCode::Int32)
+                {
+                    return Register(node, arrayType->ElementType());
+                }
+                else
                 {
                     throw TreeException(__FILE__, __LINE__,
-                                        "Argument " + std::to_string(i + 1) + " type mismatch: expected '" +
-                                            Utility::EnumToString(t->Arguments().at(i)->GetTypeCode()) + "' but got '" +
-                                            Utility::EnumToString(argType->GetTypeCode()) + "'.",
+                                        "Array index must be of type 'Int32', but got '" +
+                                            Utility::EnumToString(indexType->GetTypeCode()) + "'.",
                                         node, nullptr);
                 }
-            }
-            return Register(node, t->GetReturnType());
-        }
-        else
-        {
-            throw TreeException(__FILE__, __LINE__,
-                                "Argument count mismatch: function expects " + std::to_string(t->Arguments().size()) +
-                                    " argument(s), but got " + std::to_string(node->Arguments().size()) + ".",
-                                node, nullptr);
-        }
-    }
-    else if (callableType->GetTypeCode() == TypeCode::Array)
-    {
-        auto arrayType = static_cast<const ArrayType *>(callableType);
-        if (node->Arguments().size() == 1)
-        {
-            auto indexType = Visit(node->Arguments().front(), scope);
-            if (indexType->GetTypeCode() == TypeCode::Int32)
-            {
-                return Register(node, arrayType->ElementType());
             }
             else
             {
                 throw TreeException(__FILE__, __LINE__,
-                                    "Array index must be of type 'Int32', but got '" +
-                                        Utility::EnumToString(indexType->GetTypeCode()) + "'.",
+                                    "Array access requires exactly 1 index, but got " +
+                                        std::to_string(node->Arguments().size()) + ".",
                                     node, nullptr);
             }
         }
         else
         {
             throw TreeException(__FILE__, __LINE__,
-                                "Array access requires exactly 1 index, but got " +
-                                    std::to_string(node->Arguments().size()) + ".",
+                                "Expression is not callable: got '" +
+                                    Utility::EnumToString(callableType->GetTypeCode()) +
+                                    "' but expected a function or array.",
                                 node, nullptr);
         }
-    }
-    else
-    {
-        throw TreeException(__FILE__, __LINE__,
-                            "Expression is not callable: got '" + Utility::EnumToString(callableType->GetTypeCode()) +
-                                "' but expected a function or array.",
-                            node, nullptr);
     }
 }
 
@@ -454,6 +483,8 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
         const StructureType *structureType = static_cast<const StructureType *>(type);
 
         auto path = structureType->QualifiedName();
+        spdlog::info("Looking for structure definition of '{}'.",
+                     Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", path)));
         Namespace *top = namespaceStack.top();
 
         StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, path);
@@ -551,6 +582,10 @@ const Type *TypeChecker::VisitMember(const MemberExpression *node, Scope<const T
         {
             return Register(node, structureType->Fields().GetItemByKey(node->FieldName()));
         }
+        else if (structureType->Methods().ContainsKey(node->FieldName()))
+        {
+            return Register(node, structureType->Methods().GetItemByKey(node->FieldName()));
+        }
         else
         {
             throw TreeException(
@@ -615,6 +650,77 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
         else
         {
             Register(funcDecl, declarationType);
+        }
+    }
+    for (const auto &structDecl : top->Structures().GetAllItems())
+    {
+        const Type *type = ResolveStructureDefinition(structDecl);
+        if (type->GetTypeCode() == TypeCode::Structure)
+        {
+            const StructureType *structureType = static_cast<const StructureType *>(type);
+            Register(structDecl, structureType);
+            scope->Declare(U"this", structureType);
+            for (const auto &method : structDecl->Methods().GetAllItems())
+            {
+                scope->Declare(method->Name(), structureType->Methods().GetItemByKey(method->Name()));
+            }
+            for (const auto &method : structDecl->Methods().GetAllItems())
+            {
+                const Type *actualType = VisitLambda(method, scope);
+                const Type *declarationType = structureType->Methods().GetItemByKey(method->Name());
+                if (!CheckFunctionType(declarationType, actualType))
+                {
+                    throw TreeException(__FILE__, __LINE__,
+                                        "The method's implementation "
+                                        "type does not match the "
+                                        "declared method type.",
+                                        method, nullptr);
+                }
+                else
+                {
+                    Register(method, declarationType);
+                }
+            }
+
+            for (const TypeSyntax *interfaceTypeSyntax : structDecl->Interfaces())
+            {
+                const Type *resolvedType = ResolveTypeSyntax(interfaceTypeSyntax);
+                if (resolvedType->GetTypeCode() == TypeCode::Interface)
+                {
+                    const InterfaceType *interfaceType = static_cast<const InterfaceType *>(resolvedType);
+                    CheckInterfaceImplementation(structDecl, structureType, interfaceType);
+                }
+                else
+                {
+                    throw TreeException(__FILE__, __LINE__,
+                                        "Declared type is not an interface: got '" +
+                                            Utility::EnumToString(resolvedType->GetTypeCode()) + "'.",
+                                        structDecl, nullptr);
+                }
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Declared type is not a structure: got '" + Utility::EnumToString(type->GetTypeCode()) +
+                                    "'.",
+                                structDecl, nullptr);
+        }
+    }
+    for (const auto &interfaceDecl : top->Interfaces().GetAllItems())
+    {
+        const Type *type = ResolveInterfaceDefinition(interfaceDecl);
+        if (type->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
+            Register(interfaceDecl, interfaceType);
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Declared type is not an interface: got '" +
+                                    Utility::EnumToString(type->GetTypeCode()) + "'.",
+                                interfaceDecl, nullptr);
         }
     }
 
@@ -795,17 +901,34 @@ const Type *TypeChecker::ResolveTypeSyntax(const TypeSyntax *typeSyntax)
 
     Namespace *top = namespaceStack.top();
     StructureExpression *structureDefinition = namespaceFactory.SearchStructure(top, qualifiedName);
-    if (structureDefinition == nullptr)
+    spdlog::info("Looking for structure definition of '{}' in the namespace '{}'.",
+                 Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)),
+                 Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", top->GetFullQualifiedName())));
+    if (structureDefinition != nullptr)
     {
-        spdlog::error("The structure '{}' is not defined.",
-                      Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)));
-        throw TreeException(__FILE__, __LINE__,
-                            "Structure '" + Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)) +
-                                "' is not defined.",
-                            nullptr, nullptr);
+        return ResolveStructureDefinition(structureDefinition);
     }
+    else
+    {
+        InterfaceExpression *interfaceDefinition = namespaceFactory.SearchInterface(top, qualifiedName);
+        if (interfaceDefinition != nullptr)
+        {
+            return ResolveInterfaceDefinition(interfaceDefinition);
+        }
+        else
+        {
+            spdlog::error("The type '{}' is not defined in the namespace '{}'.",
+                          Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)),
+                          Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", top->GetFullQualifiedName())));
 
-    return ResolveStructureDefinition(structureDefinition);
+            throw TreeException(
+                __FILE__, __LINE__,
+                "Type '" + Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", qualifiedName)) +
+                    "' is not defined in the namespace '" +
+                    Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", top->GetFullQualifiedName())) + "'.",
+                nullptr, nullptr);
+        }
+    }
 }
 
 StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *structureDefinition)
@@ -816,7 +939,7 @@ StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *stru
         return cacheIt->second;
     }
 
-    StructureType *structureType = Types.CreateStructureType(structureDefinition->QualifiedName(), {}, {});
+    StructureType *structureType = Types.CreateStructureType(structureDefinition->QualifiedName(), {}, {}, {});
     structureTypeCache[structureDefinition] = structureType;
 
     Utility::OrderPreservingMap<std::u32string, const Type *> resolvedFields;
@@ -825,10 +948,75 @@ StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *stru
         resolvedFields.AddItem(fieldName, ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(fieldName)));
     }
 
-    structureType->SetFields(resolvedFields);
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> resolvedMethods;
+    for (const std::u32string &methodName : structureDefinition->Methods().GetAllKeys())
+    {
+        LambdaExpression *methodDefinition = structureDefinition->Methods().GetItemByKey(methodName);
+        resolvedMethods.AddItem(methodName, BuildCallableType(methodDefinition));
+    }
 
-    /* TODO: resolve interfaces */
+    std::vector<const InterfaceType *> resolvedInterfaces;
+    for (const TypeSyntax *interfaceTypeSyntax : structureDefinition->Interfaces())
+    {
+        auto resolvedType = ResolveTypeSyntax(interfaceTypeSyntax);
+        if (resolvedType->GetTypeCode() == TypeCode::Interface)
+        {
+            resolvedInterfaces.push_back(static_cast<const InterfaceType *>(resolvedType));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "The type specified in the 'implements' clause is not an interface: got '" +
+                                    Utility::EnumToString(resolvedType->GetTypeCode()) + "'.",
+                                structureDefinition, nullptr);
+        }
+    }
+
+    structureType->SetFields(resolvedFields);
+    structureType->SetMethods(resolvedMethods);
+    structureType->SetInterfaces(resolvedInterfaces);
+
     return structureType;
+}
+
+InterfaceType *TypeChecker::ResolveInterfaceDefinition(InterfaceExpression *interfaceDefinition)
+{
+    auto cacheIt = interfaceTypeCache.find(interfaceDefinition);
+    if (cacheIt != interfaceTypeCache.end())
+    {
+        return cacheIt->second;
+    }
+
+    InterfaceType *interfaceType = Types.CreateInterfaceType(interfaceDefinition->QualifiedName(), {}, {});
+    interfaceTypeCache[interfaceDefinition] = interfaceType;
+
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> resolvedMethods;
+    for (const std::u32string &methodName : interfaceDefinition->Methods().GetAllKeys())
+    {
+        LambdaExpression *methodDefinition = interfaceDefinition->Methods().GetItemByKey(methodName);
+        resolvedMethods.AddItem(methodName, BuildCallableType(methodDefinition));
+    }
+    interfaceType->SetMethods(resolvedMethods);
+
+    std::vector<const InterfaceType *> resolvedBaseInterfaces;
+    for (const TypeSyntax *baseInterfaceTypeSyntax : interfaceDefinition->BaseInterfaces())
+    {
+        auto resolvedType = ResolveTypeSyntax(baseInterfaceTypeSyntax);
+        if (resolvedType->GetTypeCode() == TypeCode::Interface)
+        {
+            resolvedBaseInterfaces.push_back(static_cast<const InterfaceType *>(resolvedType));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "The type specified in the 'extends' clause is not an interface: got '" +
+                                    Utility::EnumToString(resolvedType->GetTypeCode()) + "'.",
+                                interfaceDefinition, nullptr);
+        }
+    }
+    interfaceType->SetBaseInterfaces(resolvedBaseInterfaces);
+
+    return interfaceType;
 }
 
 CallableType *TypeChecker::BuildCallableType(const LambdaExpression *node)
@@ -842,6 +1030,7 @@ CallableType *TypeChecker::BuildCallableType(const LambdaExpression *node)
     const Type *returnType = ResolveTypeSyntax(node->ReturnTypeSyntax());
     return Types.CreateCallableType(parameterTypes, returnType);
 }
+
 const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<const Type *> *scope)
 {
     const Type *right = Visit(node->Right(), scope);
@@ -935,6 +1124,173 @@ const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<con
                                 Utility::EnumToString(node->Left()->NodeType()),
                             node, nullptr);
     }
+}
+
+const Type *TypeChecker::VisitMethodCall(const CallExpression *node, Scope<const Type *> *scope)
+{
+    if (node->Function()->NodeType() != ExpressionType::MemberAccess)
+    {
+        throw TreeException(__FILE__, __LINE__, "Expected a member access expression for method call.", node, nullptr);
+    }
+    else
+    {
+        const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Function());
+        const Type *objectType = Visit(memberAccess->GetExpression(), scope);
+        if (objectType->GetTypeCode() == TypeCode::Structure)
+        {
+            const StructureType *structureType = static_cast<const StructureType *>(objectType);
+            if (structureType->Methods().ContainsKey(memberAccess->FieldName()))
+            {
+                const CallableType *methodType = structureType->Methods().GetItemByKey(memberAccess->FieldName());
+                Register(memberAccess, methodType);
+
+                return CheckArguments(node, methodType, scope);
+            }
+            else if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
+            {
+                const Type *fieldType = structureType->Fields().GetItemByKey(memberAccess->FieldName());
+                if (fieldType->GetTypeCode() == TypeCode::Callable)
+                {
+                    const CallableType *callableFieldType = static_cast<const CallableType *>(fieldType);
+                    Register(memberAccess, callableFieldType);
+
+                    return CheckArguments(node, callableFieldType, scope);
+                }
+                else
+                {
+                    throw TreeException(
+                        __FILE__, __LINE__,
+                        "The member '" + Utility::UTF32ToUTF8(memberAccess->FieldName()) +
+                            "' is a field, not a method, and cannot be called. If you want to call it as a "
+                            "function, make sure it's declared as a callable type.",
+                        node, nullptr);
+                }
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(memberAccess->FieldName()) + "' is not defined in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else if (objectType->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceType = static_cast<const InterfaceType *>(objectType);
+            if (interfaceType->Methods().ContainsKey(memberAccess->FieldName()))
+            {
+                const CallableType *methodType = interfaceType->Methods().GetItemByKey(memberAccess->FieldName());
+                Register(memberAccess, methodType);
+
+                return CheckArguments(node, methodType, scope);
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(memberAccess->FieldName()) + "' is not defined in interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Cannot call member '" + Utility::UTF32ToUTF8(memberAccess->FieldName()) +
+                                    "' on type '" + Utility::EnumToString(objectType->GetTypeCode()) +
+                                    "'. Member access is only supported on structures and interfaces.",
+                                node, nullptr);
+        }
+    }
+}
+
+const Type *TypeChecker::CheckArguments(const CallExpression *node, const Type *callableType,
+                                        Scope<const Type *> *scope)
+{
+
+    auto t = static_cast<const CallableType *>(callableType);
+    if (t->Arguments().size() == node->Arguments().size())
+    {
+        for (size_t i = 0; i < node->Arguments().size(); i++)
+        {
+            auto argType = Visit(node->Arguments().at(i), scope);
+            if (!TypeFactory::AreTypesEqual(argType, t->Arguments().at(i)))
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "Argument " + std::to_string(i + 1) + " type mismatch: expected '" +
+                                        Utility::EnumToString(t->Arguments().at(i)->GetTypeCode()) + "' but got '" +
+                                        Utility::EnumToString(argType->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+        }
+        return Register(node, t->GetReturnType());
+    }
+    else
+    {
+        throw TreeException(__FILE__, __LINE__,
+                            "Argument count mismatch: function expects " + std::to_string(t->Arguments().size()) +
+                                " argument(s), but got " + std::to_string(node->Arguments().size()) + ".",
+                            node, nullptr);
+    }
+}
+
+void TypeChecker::CheckInterfaceImplementation(const StructureExpression *node, const StructureType *structureType,
+                                               const InterfaceType *interfaceType)
+{
+    for (const auto &methodName : interfaceType->Methods().GetAllKeys())
+    {
+        if (structureType->Methods().ContainsKey(methodName))
+        {
+            const CallableType *interfaceMethodType = interfaceType->Methods().GetItemByKey(methodName);
+            const CallableType *structureMethodType = structureType->Methods().GetItemByKey(methodName);
+            if (!CheckFunctionType(interfaceMethodType, structureMethodType))
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(methodName) + "' in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) +
+                        "' does not match the method type required by interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(
+                __FILE__, __LINE__,
+                "Structure '" +
+                    Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) +
+                    "' does not implement method '" + Utility::UTF32ToUTF8(methodName) + "' required by interface '" +
+                    Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+                node, nullptr);
+        }
+    }
+}
+
+std::vector<const InterfaceType *> TypeChecker::GetAllImplementedInterfaces(const StructureType *structureType)
+{
+    std::unordered_set<const InterfaceType *> visited;
+    std::stack<const InterfaceType *> stack;
+    for (const InterfaceType *interfaceType : structureType->Interfaces())
+    {
+        stack.push(interfaceType);
+    }
+    while (!stack.empty())
+    {
+        const InterfaceType *current = stack.top();
+        stack.pop();
+        if (visited.find(current) == visited.end())
+        {
+            visited.insert(current);
+            for (const InterfaceType *baseInterface : current->BaseInterfaces())
+            {
+                stack.push(baseInterface);
+            }
+        }
+    }
+
+    return std::vector<const InterfaceType *>(visited.begin(), visited.end());
 }
 
 }; /* namespace Visitors */

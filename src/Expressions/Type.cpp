@@ -105,9 +105,15 @@ bool TypeFactory::AreTypesEqual(const Type *a, const Type *b)
             const StructureType *structureTypeB = static_cast<const StructureType *>(b);
             return structureTypeA->QualifiedName() == structureTypeB->QualifiedName();
         }
+        else if (a->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceTypeA = static_cast<const InterfaceType *>(a);
+            const InterfaceType *interfaceTypeB = static_cast<const InterfaceType *>(b);
+            return interfaceTypeA->QualifiedName() == interfaceTypeB->QualifiedName();
+        }
         else
         {
-            throw std::invalid_argument("not supported type");
+            throw std::invalid_argument("Unsupported type code for type equality check.");
         }
     }
     else
@@ -203,11 +209,21 @@ bool TypeFactory::AreOrderedTypesEqual(const std::vector<const Type *> &a, const
     }
 }
 
-StructureType *TypeFactory::CreateStructureType(const std::vector<std::u32string> &qualifiedName,
-                                                const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
-                                                const std::vector<const InterfaceType *> &interfaces)
+StructureType *TypeFactory::CreateStructureType(
+    const std::vector<std::u32string> &qualifiedName,
+    const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+    const std::vector<const InterfaceType *> &interfaces)
 {
-    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, interfaces)));
+    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, methods, interfaces)));
+}
+
+InterfaceType *TypeFactory::CreateInterfaceType(
+    const std::vector<std::u32string> &qualifiedName,
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+    const std::vector<const InterfaceType *> &baseInterfaces)
+{
+    return static_cast<InterfaceType *>(CreateType(new InterfaceType(qualifiedName, methods, baseInterfaces)));
 }
 
 bool TypeFactory::AreUnorderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b)

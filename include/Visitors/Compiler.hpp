@@ -78,7 +78,8 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
 
     void CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &globalVariables,
                           std::vector<flint_bytecode::Function> &functions,
-                          std::vector<flint_bytecode::NativeFunction> &nativeFunctions);
+                          std::vector<flint_bytecode::NativeFunction> &nativeFunctions,
+                          std::vector<flint_bytecode::StructureMeta> &structures);
 
     int EntryPoint() const;
     flint_bytecode::Byte AllocateConstant(std::vector<flint_bytecode::Constant> &constantPool,
@@ -86,7 +87,9 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
     void CompileLogicalAnd(const BinaryExpression *node, ByteCode &byteCode,
                            std::vector<flint_bytecode::Constant> &constantPool);
     void CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
-                           std::vector<flint_bytecode::Constant> &constantPool);
+                          std::vector<flint_bytecode::Constant> &constantPool);
+    void VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
+                         std::vector<flint_bytecode::Constant> &constantPool);
 };
 
 inline const size_t MAX_CONSTANT_POOL_SIZE = 255;

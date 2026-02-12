@@ -110,6 +110,7 @@ void NameLocator::VisitLambda(const LambdaExpression *node, Scope<NameInfo> *par
     Scope<NameInfo> scope(parent);
     scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 0));
     scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
+    scope.Declare(FUNCTION_PARAMETER_COUNT, NameInfo(LocationKind::FunctionParameterCount, node->Parameters().size()));
     for (const auto &parameter : node->Parameters())
     {
         scope.Declare(parameter->Name(),
@@ -148,6 +149,14 @@ void NameLocator::CheckNamespace(Scope<NameInfo> *parent)
         VisitLambda(funcDecl, scope);
     }
 
+    for (const auto &structDecl : top->Structures().GetAllItems())
+    {
+        for (const auto &method : structDecl->Methods().GetAllItems())
+        {
+            VisitMethod(method, scope);
+        }
+    }
+
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
@@ -179,10 +188,22 @@ void NameLocator::RegisterFunction(const LambdaExpression *node, Scope<NameInfo>
         scope->Get(GLOBAL_FUNCTION_COUNT).Number()++;
     }
 }
-void NameLocator::RegisterStructure(const StructureExpression *node, Scope<NameInfo> *scope)
+void NameLocator::RegisterStructure(const StructureExpression *node, Scope<NameInfo> *parent)
 {
-    NameInfo &nameInfo = scope->Get(GLOBAL_STRUCTURE_COUNT);
+    NameInfo &nameInfo = parent->Get(GLOBAL_STRUCTURE_COUNT);
     Register(node, NameInfo(LocationKind::Structure, nameInfo.Number()));
+    nameInfo.Number()++;
+
+    Scope<NameInfo> scope(parent);
+    for (const auto &method : node->Methods().GetAllItems())
+    {
+        RegisterFunction(method, &scope);
+    }
+}
+void NameLocator::RegisterInterface(const InterfaceExpression *node, Scope<NameInfo> *parent)
+{
+    NameInfo &nameInfo = parent->Get(GLOBAL_INTERFACE_COUNT);
+    Register(node, NameInfo(LocationKind::Interface, nameInfo.Number()));
     nameInfo.Number()++;
 }
 void NameLocator::RegisterAllInfo(Scope<NameInfo> *scope)
@@ -209,6 +230,10 @@ void NameLocator::RegisterAllInfo(Scope<NameInfo> *scope)
         {
             RegisterStructure(structureDefinition, scope);
         }
+        for (InterfaceExpression *interfaceDefinition : top->Interfaces().GetAllItems())
+        {
+            RegisterInterface(interfaceDefinition, scope);
+        }
     }
 }
 void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
@@ -217,6 +242,7 @@ void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
     scope->Declare(GLOBAL_FUNCTION_COUNT, NameInfo(LocationKind::GlobalFunctionCount, 0));
     scope->Declare(GLOBAL_NATIVE_FUNCTION_COUNT, NameInfo(LocationKind::GlobalNativeFunctionCount, 0));
     scope->Declare(GLOBAL_STRUCTURE_COUNT, NameInfo(LocationKind::GlobalStructureCount, 0));
+    scope->Declare(GLOBAL_INTERFACE_COUNT, NameInfo(LocationKind::GlobalInterfaceCount, 0));
 }
 void NameLocator::VisitNew(const NewExpression *node, Scope<NameInfo> *scope)
 {
@@ -254,6 +280,27 @@ void NameLocator::VisitMember(const MemberExpression *node, Scope<NameInfo> *sco
 void NameLocator::Register(const Expression *node, const NameInfo &nameInfo)
 {
     nameInfoTable.insert({{node, nameInfo.Kind()}, nameInfo});
+}
+
+void NameLocator::VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent)
+{
+    Scope<NameInfo> scope(parent);
+    scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 1)); /* 1 for 'this' */
+    scope.Declare(U"this", NameInfo(LocationKind::FunctionVariable, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+    scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
+    scope.Declare(FUNCTION_PARAMETER_COUNT,
+                  NameInfo(LocationKind::FunctionParameterCount, node->Parameters().size() + 1)); /* +1 for 'this' */
+
+    for (const auto &parameter : node->Parameters())
+    {
+        scope.Declare(parameter->Name(),
+                      NameInfo(LocationKind::FunctionVariable, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+        scope.Get(LOCAL_VARIABLE_COUNT).Number()++;
+    }
+    Visit(node->Body(), &scope);
+
+    Register(node, NameInfo(LocationKind::FunctionVariableCount, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+    Register(node, NameInfo(LocationKind::FunctionConstantCount, scope.Get(LOCAL_CONSTANT_COUNT).Number()));
 }
 
 }; /* namespace Visitors */

@@ -356,3 +356,149 @@ TEST_CASE("test while loop variable locating", "[WhileLoop]")
     REQUIRE(n.value().Number() == 0);
     REQUIRE(i.value().Number() == 1);
 }
+
+// ============================================================================
+// Structure and Method Tests
+// ============================================================================
+
+TEST_CASE("test structure with method registration", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; "
+        U"  func get(): Int { this.value; } } }");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+
+    // Structure should be registered
+    StructureExpression *structDecl =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Counter"});
+    REQUIRE(structDecl != nullptr);
+    REQUIRE(nameLocator.ExistsNameInfo(structDecl, LocationKind::Structure));
+    REQUIRE(nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number() == 0);
+
+    // Method should be registered as a function
+    LambdaExpression *method = structDecl->Methods().GetItemByKey(U"get");
+    REQUIRE(method != nullptr);
+    REQUIRE(nameLocator.ExistsNameInfo(method, LocationKind::Function));
+
+    // Check counts
+    REQUIRE(nameScope.Get(GLOBAL_STRUCTURE_COUNT).Number() == 1);
+    REQUIRE(nameScope.Get(GLOBAL_FUNCTION_COUNT).Number() == 1);
+}
+
+TEST_CASE("test method this at slot 0", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; "
+        U"  func get(): Int { this.value; } } }");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    // After CheckNamespace, the method's variable count should include 'this'
+    LambdaExpression *method =
+        parser.GetNamespaceFactory().SearchStructure(
+            parser.GetNamespaceFactory().GetRoot(), {U"M", U"Counter"})->Methods().GetItemByKey(U"get");
+    REQUIRE(method != nullptr);
+
+    // FunctionVariableCount: 'this' = 1 slot (no other params or locals)
+    REQUIRE(nameLocator.ExistsNameInfo(method, LocationKind::FunctionVariableCount));
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 1);
+}
+
+TEST_CASE("test method params start at slot 1", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Calc { value: Int; "
+        U"  func add(x: Int, y: Int): Int { this.value + x + y; } } }");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    LambdaExpression *method =
+        parser.GetNamespaceFactory().SearchStructure(
+            parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"})->Methods().GetItemByKey(U"add");
+    REQUIRE(method != nullptr);
+
+    // FunctionVariableCount: 'this' (slot 0) + x (slot 1) + y (slot 2) = 3
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 3);
+}
+
+TEST_CASE("test method with local variables", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Calc { value: Int; "
+        U"  func compute(x: Int): Int { var temp = this.value + x; temp * 2; } } }");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    LambdaExpression *method =
+        parser.GetNamespaceFactory().SearchStructure(
+            parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"})->Methods().GetItemByKey(U"compute");
+    REQUIRE(method != nullptr);
+
+    // FunctionVariableCount: 'this' (slot 0) + x (slot 1) + temp (slot 2) = 3
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 3);
+}
+
+TEST_CASE("test struct methods counted in global function count", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"  func standalone(): Int { 1; } "
+        U"  struct Sensor { reading: Int; "
+        U"    func read(): Int { this.reading; } "
+        U"    func calibrate(): Int { this.reading + 1; } } }");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+
+    // standalone + read + calibrate = 3 functions
+    REQUIRE(nameScope.Get(GLOBAL_FUNCTION_COUNT).Number() == 3);
+    REQUIRE(nameScope.Get(GLOBAL_STRUCTURE_COUNT).Number() == 1);
+}

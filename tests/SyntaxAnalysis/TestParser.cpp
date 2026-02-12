@@ -425,3 +425,97 @@ TEST_CASE("missing semicolon in new expression", "[Error]")
 
     REQUIRE_THROWS_AS(parser.ParseExpr(), ParserException);
 }
+
+// ============================================================================
+// Structure with Methods Tests
+// ============================================================================
+
+TEST_CASE("parse struct with fields only", "[Structure]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Point"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 2);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 0);
+}
+
+TEST_CASE("parse struct with one method", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; func increment(): Int { this.value + 1; } } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Counter"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 1);
+    REQUIRE(structDef->Fields().ContainsKey(U"value"));
+    REQUIRE(structDef->Methods().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().ContainsKey(U"increment"));
+}
+
+TEST_CASE("parse struct with multiple methods", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Calc { "
+        U"  value: Int; "
+        U"  func add(x: Int): Int { this.value + x; } "
+        U"  func sub(x: Int): Int { this.value - x; } "
+        U"} }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 2);
+    REQUIRE(structDef->Methods().ContainsKey(U"add"));
+    REQUIRE(structDef->Methods().ContainsKey(U"sub"));
+}
+
+TEST_CASE("parse struct with methods only no fields", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Greeter { func greet(): Int { 42; } } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Greeter"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 0);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().ContainsKey(U"greet"));
+}
+
+TEST_CASE("parse new expression with field initialization", "[New]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"new Point { x = 1; y = 2; }");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::New);
+    const NewExpression *newExp = static_cast<const NewExpression *>(exp);
+    REQUIRE(newExp->GetTypeSyntax() != nullptr);
+    REQUIRE(newExp->FieldsInitialization().GetAllKeys().size() == 2);
+    REQUIRE(newExp->FieldsInitialization().ContainsKey(U"x"));
+    REQUIRE(newExp->FieldsInitialization().ContainsKey(U"y"));
+}
+
+TEST_CASE("parse this dot field as member access", "[MemberAccess]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"this.value");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::MemberAccess);
+    const MemberExpression *memberExp = static_cast<const MemberExpression *>(exp);
+    REQUIRE(memberExp->FieldName() == U"value");
+    REQUIRE(memberExp->GetExpression()->NodeType() == ExpressionType::Parameter);
+}

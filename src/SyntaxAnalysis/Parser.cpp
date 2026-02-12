@@ -533,16 +533,53 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
     const Token &start = Look();
     Match(TokenTag::Structure);
     std::u32string name = Match(TokenTag::Identifier).text;
+    std::vector<TypeSyntax *> interfaces;
+    if (Look().tag == TokenTag::SubtypeOf)
+    {
+        Match(TokenTag::SubtypeOf);
+        interfaces.push_back(ParseType());
+        while (Look().tag == TokenTag::Comma)
+        {
+            Match(TokenTag::Comma);
+            interfaces.push_back(ParseType());
+        }
+    }
     Match(TokenTag::LeftBrace);
 
     Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields;
+    Utility::OrderPreservingMap<std::u32string, LambdaExpression *> methods;
     while (Look().tag != TokenTag::RightBrace)
     {
-        std::u32string name = Match(TokenTag::Identifier).text;
-        Match(TokenTag::Colon);
-        TypeSyntax *typeSyntax = ParseType();
-        fields.AddItem(name, typeSyntax);
-        Match(TokenTag::Semicolon);
+        if (Look().tag == TokenTag::Func)
+        {
+            LambdaExpression *method = FunctionDeclarationStatement({});
+            methods.AddItem(method->Name(), method);
+        }
+        else if (Look().tag == TokenTag::At)
+        {
+            auto annotations = ParseAnnotations();
+            if (Look().tag == TokenTag::Func)
+            {
+                LambdaExpression *method = FunctionDeclarationStatement(annotations);
+                methods.AddItem(method->Name(), method);
+            }
+            else
+            {
+                /* TODO: support annotated fields */
+                throw ParserException(
+                    __FILE__, __LINE__,
+                    SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+                    "Expecting a function definition.", nullptr);
+            }
+        }
+        else
+        {
+            std::u32string name = Match(TokenTag::Identifier).text;
+            Match(TokenTag::Colon);
+            TypeSyntax *typeSyntax = ParseType();
+            fields.AddItem(name, typeSyntax);
+            Match(TokenTag::Semicolon);
+        }
     }
     Match(TokenTag::RightBrace);
 
@@ -554,7 +591,62 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
         qualifiedName.push_back(path.at(i));
     }
     qualifiedName.push_back(name);
-    return GetExpressionFactory().Create<StructureExpression>(Pos(start), qualifiedName, fields);
+    return GetExpressionFactory().Create<StructureExpression>(Pos(start), qualifiedName, fields, methods, interfaces);
+}
+
+Expressions::InterfaceExpression *Parser::ParseInterfaceDefinition()
+{
+    const Token &start = Look();
+    Match(TokenTag::Interface);
+    std::u32string name = Match(TokenTag::Identifier).text;
+    std::vector<TypeSyntax *> baseInterfaces;
+    if (Look().tag == TokenTag::SubtypeOf)
+    {
+        Match(TokenTag::SubtypeOf);
+        baseInterfaces.push_back(ParseType());
+        while (Look().tag == TokenTag::Comma)
+        {
+            Match(TokenTag::Comma);
+            baseInterfaces.push_back(ParseType());
+        }
+    }
+    Match(TokenTag::LeftBrace);
+    Utility::OrderPreservingMap<std::u32string, LambdaExpression *> methods;
+    while (Look().tag != TokenTag::RightBrace)
+    {
+        if (Look().tag == TokenTag::Func)
+        {
+            LambdaExpression *method = FunctionDeclarationStatement({});
+            methods.AddItem(method->Name(), method);
+        }
+        else if (Look().tag == TokenTag::At)
+        {
+            auto annotations = ParseAnnotations();
+            if (Look().tag == TokenTag::Func)
+            {
+                LambdaExpression *method = FunctionDeclarationStatement(annotations);
+                methods.AddItem(method->Name(), method);
+            }
+            else
+            {
+                throw ParserException(
+                    __FILE__, __LINE__,
+                    SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+                    "Expecting a function definition.", nullptr);
+            }
+        }
+    }
+    Match(TokenTag::RightBrace);
+
+    Namespace *top = namespaceStack.top();
+    std::vector<std::u32string> path = top->GetFullQualifiedName();
+    std::vector<std::u32string> qualifiedName;
+    for (size_t i = 1; i < path.size(); i++)
+    {
+        qualifiedName.push_back(path.at(i));
+    }
+    qualifiedName.push_back(name);
+    return GetExpressionFactory().Create<InterfaceExpression>(Pos(start), qualifiedName, baseInterfaces, methods);
 }
 
 std::vector<ExpPtr> Parser::ParseArguments()
@@ -663,6 +755,12 @@ void Parser::ParseNamespace()
             case TokenTag::Structure: {
                 StructureExpression *structureDefinition = ParseStructureDefinition();
                 current->Structures().AddItem(structureDefinition->QualifiedName().back(), structureDefinition);
+
+                break;
+            }
+            case TokenTag::Interface: {
+                InterfaceExpression *interfaceDefinition = ParseInterfaceDefinition();
+                current->Interfaces().AddItem(interfaceDefinition->QualifiedName().back(), interfaceDefinition);
 
                 break;
             }

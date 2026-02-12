@@ -3,6 +3,7 @@
 
 #include "Expressions/Expression.hpp"
 #include "Expressions/TreeException.hpp"
+#include "Utility/Convert.hpp"
 
 namespace Cygni
 {
@@ -34,6 +35,8 @@ class ExpressionVisitor
         case ExpressionType::Or:
         case ExpressionType::Assign:
             return VisitBinary(static_cast<const BinaryExpression *>(node), arguments...);
+        case ExpressionType::UnaryPlus:
+        case ExpressionType::UnaryMinus:
         case ExpressionType::Not:
         case ExpressionType::Convert:
         case ExpressionType::Halt:
@@ -61,7 +64,10 @@ class ExpressionVisitor
         case ExpressionType::MemberAccess:
             return VisitMember(static_cast<const MemberExpression *>(node), arguments...);
         default:
-            throw TreeException(__FILE__, __LINE__, "The node type is not supported by the visitor.", node, nullptr);
+            throw TreeException(__FILE__, __LINE__,
+                                "The node type '" + Utility::EnumToString(node->NodeType()) +
+                                    "' is not supported by the visitor.",
+                                node, nullptr);
         }
     }
     virtual ReturnType VisitBinary(const BinaryExpression *node, ArgTypes... arguments) = 0;

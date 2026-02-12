@@ -1,6 +1,7 @@
 #include "Visitors/Compiler.hpp"
 
 #include "Utility/Convert.hpp"
+#include "Utility/StringUtils.hpp"
 #include "Visitors/CompilationException.hpp"
 #include <bit_converter/bit_converter.hpp>
 #include <spdlog/spdlog.h>
@@ -272,7 +273,32 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
 void Compiler::VisitUnary(const UnaryExpression *node, ByteCode &byteCode,
                           std::vector<flint_bytecode::Constant> &constantPool)
 {
-    if (node->NodeType() == ExpressionType::Not && typeChecker.GetType(node)->GetTypeCode() == TypeCode::Boolean)
+    if (node->NodeType() == ExpressionType::UnaryPlus)
+    {
+        Visit(node->Operand(), byteCode, constantPool);
+    }
+    else if (node->NodeType() == ExpressionType::UnaryMinus)
+    {
+        Visit(node->Operand(), byteCode, constantPool);
+        switch (typeChecker.GetType(node)->GetTypeCode())
+        {
+        case TypeCode::Int32:
+            byteCode.AddOp(OpCode::MINUS_I32);
+            break;
+        case TypeCode::Int64:
+            byteCode.AddOp(OpCode::MINUS_I64);
+            break;
+        case TypeCode::Float32:
+            byteCode.AddOp(OpCode::MINUS_F32);
+            break;
+        case TypeCode::Float64:
+            byteCode.AddOp(OpCode::MINUS_F64);
+            break;
+        default:
+            throw CompilationException(__FILE__, __LINE__, "Unsupported unary minus operand type", node, nullptr);
+        }
+    }
+    else if (node->NodeType() == ExpressionType::Not && typeChecker.GetType(node)->GetTypeCode() == TypeCode::Boolean)
     {
         Visit(node->Operand(), byteCode, constantPool);
         byteCode.AddOp(OpCode::LOGICAL_NOT);
@@ -547,6 +573,7 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
         }
         case TypeCode::String:
         case TypeCode::Structure:
+        case TypeCode::Interface:
         case TypeCode::Array:
         case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_LOCAL_OBJECT);
@@ -591,6 +618,7 @@ void Compiler::VisitParameter(const ParameterExpression *node, ByteCode &byteCod
         }
         case TypeCode::String:
         case TypeCode::Structure:
+        case TypeCode::Interface:
         case TypeCode::Array:
         case TypeCode::Callable: {
             byteCode.AddOp(OpCode::PUSH_GLOBAL_OBJECT);
@@ -650,111 +678,115 @@ void Compiler::VisitConditional(const ConditionalExpression *node, ByteCode &byt
 
     int32_t offset1 = location2 - location1;
     int32_t offset2 = location3 - (location2 + sizeof(int16_t));
-    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
-        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET || offset2 < MIN_JUMP_OFFSET ||
+        offset2 > MAX_JUMP_OFFSET)
     {
         throw CompilationException(__FILE__, __LINE__,
-                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node,
-                                   nullptr);
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node, nullptr);
     }
 
     spdlog::debug("location 1: {}, location 2: {}, location 3: {}", location1, location2, location3);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
-                                byteCode.GetBytes().begin() + location1);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true, byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
-                                byteCode.GetBytes().begin() + location2);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true, byteCode.GetBytes().begin() + location2);
 }
 
 void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
                          std::vector<flint_bytecode::Constant> &constantPool)
 {
-    const Type *functionType = typeChecker.GetType(node->Function());
-    if (functionType->GetTypeCode() == TypeCode::Array)
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
     {
-        Visit(node->Function(), byteCode, constantPool);
-        for (const Expression *argument : node->Arguments())
-        {
-            Visit(argument, byteCode, constantPool);
-        }
-        const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
-        switch (arrayType->ElementType()->GetTypeCode())
-        {
-        case TypeCode::Boolean:
-        case TypeCode::Char:
-        case TypeCode::Int32: {
-            byteCode.AddOp(OpCode::PUSH_ARRAY_I32);
-            break;
-        }
-        case TypeCode::Int64: {
-            byteCode.AddOp(OpCode::PUSH_ARRAY_I64);
-            break;
-        }
-        case TypeCode::Float32: {
-            byteCode.AddOp(OpCode::PUSH_ARRAY_F32);
-            break;
-        }
-        case TypeCode::Float64: {
-            byteCode.AddOp(OpCode::PUSH_ARRAY_F64);
-            break;
-        }
-        case TypeCode::String:
-        case TypeCode::Structure:
-        case TypeCode::Callable:
-        case TypeCode::Array: {
-            byteCode.AddOp(OpCode::PUSH_ARRAY_OBJECT);
-            break;
-        }
-        default: {
-            spdlog::error("Unsupported array element type for array access.");
-
-            throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array access.", node,
-                                       nullptr);
-        }
-        }
+        VisitMethodCall(node, byteCode, constantPool);
     }
     else
     {
-        for (const Expression *argument : node->Arguments())
+        const Type *functionType = typeChecker.GetType(node->Function());
+        if (functionType->GetTypeCode() == TypeCode::Array)
         {
-            Visit(argument, byteCode, constantPool);
-        }
-        if (node->Function()->NodeType() == ExpressionType::Parameter)
-        {
-            if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
+            Visit(node->Function(), byteCode, constantPool);
+            for (const Expression *argument : node->Arguments())
             {
-                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
-                byteCode.AddOp(OpCode::INVOKE_FUNCTION);
-                byteCode.AddByte(constantPool.size());
-                constantPool.push_back(
-                    flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+                Visit(argument, byteCode, constantPool);
             }
-            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
+            const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
+            switch (arrayType->ElementType()->GetTypeCode())
             {
-                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
-                byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
-                byteCode.AddByte(constantPool.size());
-                constantPool.push_back(flint_bytecode::Constant(
-                    flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION, nameInfo.Number()));
+            case TypeCode::Boolean:
+            case TypeCode::Char:
+            case TypeCode::Int32: {
+                byteCode.AddOp(OpCode::PUSH_ARRAY_I32);
+                break;
             }
-            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
-            {
-                Visit(node->Function(), byteCode, constantPool);
-                byteCode.AddOp(OpCode::INVOKE_CLOSURE);
+            case TypeCode::Int64: {
+                byteCode.AddOp(OpCode::PUSH_ARRAY_I64);
+                break;
             }
-            else
-            {
-                spdlog::error("Unsupported call expression location kind.");
-                throw CompilationException(__FILE__, __LINE__, "Unsupported call expression location kind.", node,
+            case TypeCode::Float32: {
+                byteCode.AddOp(OpCode::PUSH_ARRAY_F32);
+                break;
+            }
+            case TypeCode::Float64: {
+                byteCode.AddOp(OpCode::PUSH_ARRAY_F64);
+                break;
+            }
+            case TypeCode::String:
+            case TypeCode::Structure:
+            case TypeCode::Callable:
+            case TypeCode::Array: {
+                byteCode.AddOp(OpCode::PUSH_ARRAY_OBJECT);
+                break;
+            }
+            default: {
+                spdlog::error("Unsupported array element type for array access.");
+
+                throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array access.", node,
                                            nullptr);
+            }
             }
         }
         else
         {
-            spdlog::error("Unsupported call expression type. Got node type: {}",
-                          Utility::EnumToString(node->Function()->NodeType()));
+            for (const Expression *argument : node->Arguments())
+            {
+                Visit(argument, byteCode, constantPool);
+            }
+            if (node->Function()->NodeType() == ExpressionType::Parameter)
+            {
+                if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
+                {
+                    const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
+                    byteCode.AddOp(OpCode::INVOKE_FUNCTION);
+                    byteCode.AddByte(constantPool.size());
+                    constantPool.push_back(flint_bytecode::Constant(
+                        flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+                }
+                else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
+                {
+                    const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
+                    byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
+                    byteCode.AddByte(constantPool.size());
+                    constantPool.push_back(flint_bytecode::Constant(
+                        flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION, nameInfo.Number()));
+                }
+                else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
+                {
+                    Visit(node->Function(), byteCode, constantPool);
+                    byteCode.AddOp(OpCode::INVOKE_CLOSURE);
+                }
+                else
+                {
+                    spdlog::error("Unsupported call expression location kind.");
+                    throw CompilationException(__FILE__, __LINE__, "Unsupported call expression location kind.", node,
+                                               nullptr);
+                }
+            }
+            else
+            {
+                spdlog::error("Unsupported call expression type. Got node type: {}",
+                              Utility::EnumToString(node->Function()->NodeType()));
 
-            throw CompilationException(__FILE__, __LINE__, "Unsupported call expression type", node, nullptr);
+                throw CompilationException(__FILE__, __LINE__, "Unsupported call expression type", node, nullptr);
+            }
         }
     }
 }
@@ -777,15 +809,14 @@ void Compiler::VisitWhileLoop(const WhileLoopExpression *node, ByteCode &byteCod
 
     Visit(node->Body(), byteCode, constantPool);
     byteCode.AddOp(OpCode::JUMP);
-    int32_t backwardOffset = static_cast<int32_t>(label1.Location()) -
-                             (byteCode.Size() + static_cast<int32_t>(sizeof(int16_t)));
+    int32_t backwardOffset =
+        static_cast<int32_t>(label1.Location()) - (byteCode.Size() + static_cast<int32_t>(sizeof(int16_t)));
     int32_t forwardOffset = byteCode.Size() - static_cast<int32_t>(label2.Location() + sizeof(int16_t));
-    if (backwardOffset < MIN_JUMP_OFFSET || backwardOffset > MAX_JUMP_OFFSET ||
-        forwardOffset < MIN_JUMP_OFFSET || forwardOffset > MAX_JUMP_OFFSET)
+    if (backwardOffset < MIN_JUMP_OFFSET || backwardOffset > MAX_JUMP_OFFSET || forwardOffset < MIN_JUMP_OFFSET ||
+        forwardOffset > MAX_JUMP_OFFSET)
     {
         throw CompilationException(__FILE__, __LINE__,
-                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node,
-                                   nullptr);
+                                   "Jump offset exceeds 16-bit limit. Consider splitting the function.", node, nullptr);
     }
     byteCode.AddI16(backwardOffset);
 
@@ -855,7 +886,10 @@ void Compiler::VisitVariableDeclaration(const VariableDeclarationExpression *nod
         break;
     }
     case TypeCode::String:
-    case TypeCode::Structure: {
+    case TypeCode::Structure:
+    case TypeCode::Interface:
+    case TypeCode::Array:
+    case TypeCode::Callable: {
         byteCode.AddOp(OpCode::POP_LOCAL_OBJECT);
         byteCode.AddByte(static_cast<Byte>(offset));
         break;
@@ -1365,7 +1399,8 @@ std::vector<flint_bytecode::NativeLibrary> Compiler::GetNativeLibraries()
 
 void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &globalVariables,
                                 std::vector<flint_bytecode::Function> &functions,
-                                std::vector<flint_bytecode::NativeFunction> &nativeFunctions)
+                                std::vector<flint_bytecode::NativeFunction> &nativeFunctions,
+                                std::vector<flint_bytecode::StructureMeta> &structures)
 {
     Namespace *top = namespaceStack.top();
 
@@ -1418,10 +1453,29 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
         }
     }
 
+    for (const auto &structDecl : top->Structures().GetAllItems())
+    {
+        std::vector<std::string> fieldNames;
+        for (const auto &fieldName : structDecl->Fields().GetAllKeys())
+        {
+            fieldNames.push_back(Utility::UTF32ToUTF8(fieldName));
+        }
+        flint_bytecode::StructureMeta structureMeta(
+            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames);
+        int structIndex = nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number();
+        structures.at(structIndex) = structureMeta;
+        for (const auto &methodDecl : structDecl->Methods().GetAllItems())
+        {
+            auto method = CompileFunction(Utility::UTF32ToUTF8(methodDecl->Name()), methodDecl);
+            int index = nameLocator.GetNameInfo(methodDecl, LocationKind::Function).Number();
+            functions.at(index) = method;
+        }
+    }
+
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
-        CompileNamespace(globalVariables, functions, nativeFunctions);
+        CompileNamespace(globalVariables, functions, nativeFunctions, structures);
         namespaceStack.pop();
         spdlog::info("Finish compiling namespace \"{}\".", Utility::UTF32ToUTF8(current->Name()));
     }
@@ -1476,21 +1530,18 @@ void Compiler::CompileLogicalAnd(const BinaryExpression *node, ByteCode &byteCod
 
     int32_t offset1 = location3 - (location1 + sizeof(int16_t));
     int32_t offset2 = location4 - (location2 + sizeof(int16_t));
-    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
-        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET || offset2 < MIN_JUMP_OFFSET ||
+        offset2 > MAX_JUMP_OFFSET)
     {
-        throw CompilationException(__FILE__, __LINE__,
-                                   "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node,
-                                   nullptr);
+        throw CompilationException(
+            __FILE__, __LINE__, "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node, nullptr);
     }
 
     spdlog::info("logical and: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
                  location3, location4);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
-                                byteCode.GetBytes().begin() + location1);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true, byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
-                                byteCode.GetBytes().begin() + location2);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true, byteCode.GetBytes().begin() + location2);
 }
 void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode &byteCode,
                                           std::vector<flint_bytecode::Constant> &constantPool)
@@ -1511,21 +1562,57 @@ void Visitors::Compiler::CompileLogicalOr(const BinaryExpression *node, ByteCode
 
     int32_t offset1 = location3 - (location1 + sizeof(int16_t));
     int32_t offset2 = location4 - (location2 + sizeof(int16_t));
-    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET ||
-        offset2 < MIN_JUMP_OFFSET || offset2 > MAX_JUMP_OFFSET)
+    if (offset1 < MIN_JUMP_OFFSET || offset1 > MAX_JUMP_OFFSET || offset2 < MIN_JUMP_OFFSET ||
+        offset2 > MAX_JUMP_OFFSET)
     {
-        throw CompilationException(__FILE__, __LINE__,
-                                   "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node,
-                                   nullptr);
+        throw CompilationException(
+            __FILE__, __LINE__, "Jump offset exceeds 16-bit limit. Consider splitting the expression.", node, nullptr);
     }
 
     spdlog::info("logical or: location 1: {}, location 2: {}, location 3: {}, location 4: {}", location1, location2,
                  location3, location4);
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true,
-                                byteCode.GetBytes().begin() + location1);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset1), true, byteCode.GetBytes().begin() + location1);
 
-    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true,
-                                byteCode.GetBytes().begin() + location2);
+    bit_converter::i16_to_bytes(static_cast<int16_t>(offset2), true, byteCode.GetBytes().begin() + location2);
+}
+void Compiler::VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
+                               std::vector<flint_bytecode::Constant> &constantPool)
+{
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    {
+        const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Function());
+        const Type *type = typeChecker.GetType(memberAccess->GetExpression());
+        if (type->GetTypeCode() == TypeCode::Structure)
+        {
+            const StructureType *structureType = static_cast<const StructureType *>(type);
+            Visit(memberAccess->GetExpression(), byteCode, constantPool);
+            for (const auto &argument : node->Arguments())
+            {
+                Visit(argument, byteCode, constantPool);
+            }
+            byteCode.AddOp(OpCode::INVOKE_FUNCTION);
+            StructureExpression *structDef =
+                namespaceFactory.SearchStructure(namespaceStack.top(), structureType->QualifiedName());
+            LambdaExpression *methodDef = structDef->Methods().GetItemByKey(memberAccess->FieldName());
+            const NameInfo &nameInfo = nameLocator.GetNameInfo(methodDef, LocationKind::Function);
+            byteCode.AddByte(constantPool.size());
+            constantPool.push_back(
+                flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+        }
+        else
+        {
+            throw CompilationException(__FILE__, __LINE__,
+                                       "Method call expression's function part is expected to be a member access "
+                                       "expression of a structure type.",
+                                       node, nullptr);
+        }
+    }
+    else
+    {
+        throw CompilationException(
+            __FILE__, __LINE__, "Method call expression's function part is expected to be a member access expression.",
+            node, nullptr);
+    }
 }
 }; /* namespace Visitors */
 }; // namespace Cygni

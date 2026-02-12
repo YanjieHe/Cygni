@@ -113,6 +113,8 @@ class Parser
 
     Expressions::StructureExpression *ParseStructureDefinition();
 
+    Expressions::InterfaceExpression *ParseInterfaceDefinition();
+
     std::vector<ExpPtr> ParseArguments();
 
     ExpPtr ParseArgument();

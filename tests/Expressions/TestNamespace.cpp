@@ -128,7 +128,7 @@ TEST_CASE("namespace search a structure", "[Namespace]")
     REQUIRE(spiralNamespace != nullptr);
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
     std::vector<std::u32string> qualifiedName = {U"Universe", U"Galaxies", U"Spiral", U"SpiralAttributes"};
-    StructureExpression spiralAttributes(SourceRange(sourceCodeFile, 0, 0, 0, 0), qualifiedName, {});
+    StructureExpression spiralAttributes(SourceRange(sourceCodeFile, 0, 0, 0, 0), qualifiedName, {}, {}, {});
     spiralNamespace->Structures().AddItem(U"SpiralAttributes", &spiralAttributes);
     StructureExpression *structureDefinition = namespaceFactory.SearchStructure(root, qualifiedName);
     REQUIRE(structureDefinition != nullptr);
@@ -220,13 +220,15 @@ TEST_CASE("namespace upward search for structure", "[Namespace]")
     /* Define structure "Color" in Graphics */
     StructureExpression *colorInGraphics = expressionFactory.Create<StructureExpression>(
         sr, std::vector<std::u32string>{U"Graphics", U"Color"},
-        Cygni::Utility::OrderPreservingMap<std::u32string, TypeSyntax *>{});
+        Cygni::Utility::OrderPreservingMap<std::u32string, TypeSyntax *>{},
+        Cygni::Utility::OrderPreservingMap<std::u32string, LambdaExpression *>{}, std::vector<TypeSyntax *>{});
     nsGraphics->Structures().AddItem(U"Color", colorInGraphics);
 
     /* Define structure "Shader" in Rendering */
     StructureExpression *shaderInRendering = expressionFactory.Create<StructureExpression>(
         sr, std::vector<std::u32string>{U"Graphics", U"Rendering", U"Shader"},
-        Cygni::Utility::OrderPreservingMap<std::u32string, TypeSyntax *>{});
+        Cygni::Utility::OrderPreservingMap<std::u32string, TypeSyntax *>{},
+        Cygni::Utility::OrderPreservingMap<std::u32string, LambdaExpression *>{}, std::vector<TypeSyntax *>{});
     nsRendering->Structures().AddItem(U"Shader", shaderInRendering);
 
     /* From Rendering, should find Color in Graphics (upward search) */

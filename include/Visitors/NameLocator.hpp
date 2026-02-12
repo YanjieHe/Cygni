@@ -17,15 +17,18 @@ enum class LocationKind
     GlobalVariable,
     FunctionVariable,
     FunctionConstant,
+    FunctionParameterCount,
     FunctionVariableCount,
     FunctionConstantCount,
     Function,
     NativeFunction,
     Structure,
+    Interface,
     GlobalVariableCount,
     GlobalFunctionCount,
     GlobalNativeFunctionCount,
-    GlobalStructureCount
+    GlobalStructureCount,
+    GlobalInterfaceCount
 };
 
 class NameInfo
@@ -92,9 +95,11 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
     void CheckNamespace(Scope<NameInfo> *parent);
     void RegisterGlobalVariable(const VariableDeclarationExpression *node, Scope<NameInfo> *scope);
     void RegisterFunction(const LambdaExpression *node, Scope<NameInfo> *scope);
-    void RegisterStructure(const StructureExpression *node, Scope<NameInfo> *scope);
+    void RegisterStructure(const StructureExpression *node, Scope<NameInfo> *parent);
+    void RegisterInterface(const InterfaceExpression *node, Scope<NameInfo> *scope);
     void RegisterAllInfo(Scope<NameInfo> *scope);
-    void InitializeSymbolCounters(Scope<NameInfo>* scope);
+    void InitializeSymbolCounters(Scope<NameInfo> *scope);
+    void VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent);
 
   private:
     void Register(const Expression *node, const NameInfo &nameInfo);
@@ -102,10 +107,12 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
 
 inline const std::u32string LOCAL_CONSTANT_COUNT = U"$LOCAL_CONSTANT_COUNT";
 inline const std::u32string LOCAL_VARIABLE_COUNT = U"$LOCAL_VARIABLE_COUNT";
+inline const std::u32string FUNCTION_PARAMETER_COUNT = U"$FUNCTION_PARAMETER_COUNT";
 inline const std::u32string GLOBAL_NATIVE_FUNCTION_COUNT = U"$GLOBAL_NATIVE_FUNCTION_COUNT";
 inline const std::u32string GLOBAL_FUNCTION_COUNT = U"$GLOBAL_FUNCTION_COUNT";
 inline const std::u32string GLOBAL_VARIABLE_COUNT = U"$GLOBAL_VARIABLE_COUNT";
 inline const std::u32string GLOBAL_STRUCTURE_COUNT = U"$GLOBAL_STRUCTURE_COUNT";
+inline const std::u32string GLOBAL_INTERFACE_COUNT = U"$GLOBAL_INTERFACE_COUNT";
 }; /* namespace Visitors */
 }; /* namespace Cygni */
 

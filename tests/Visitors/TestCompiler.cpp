@@ -14,37 +14,78 @@ using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 using namespace Cygni::Visitors;
+using namespace Cygni::Compilation;
 
 static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
     Lexer lexer(sourceCodeFile, sourceCode);
     std::vector<Token> tokens = lexer.ReadAll();
-    Cygni::Compilation::CompilationContext compilationContext;
+    CompilationContext compilationContext;
 
     Parser parser(tokens, sourceCodeFile, compilationContext);
     parser.ParseNamespace();
 
-    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    TypeChecker typeChecker(compilationContext.GetNamespaceFactory(), compilationContext.GetExpressionFactory());
 
     Scope<const Type *> scope;
     typeChecker.CheckNamespace(&scope);
 
     Scope<NameInfo> nameInfoScope;
-    NameLocator nameLocator = NameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
     nameLocator.CheckNamespace(&nameInfoScope);
 
-    // REQUIRE(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number() == 2);
-
-    Compiler compiler(typeChecker, nameLocator, parser.GetNamespaceFactory());
+    Compiler compiler(typeChecker, nameLocator, compilationContext.GetNamespaceFactory());
     std::vector<flint_bytecode::GlobalVariable> globalVariables(nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
     std::vector<flint_bytecode::Function> functions(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-    compiler.CompileNamespace(globalVariables, functions, nativeFunctions);
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions,
+                                            compiler.EntryPoint());
+
+    return program;
+}
+
+static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<std::u32string> &sourceFiles)
+{
+    CompilationContext compilationContext;
+
+    // Phase 1: Parse all files, all namespaces go into the same root
+    for (size_t i = 0; i < sourceFiles.size(); i++)
+    {
+        std::string fileName = "source-file-" + std::to_string(i) + ".cyg";
+        std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>(fileName);
+        Lexer lexer(sourceCodeFile, sourceFiles[i]);
+        std::vector<Token> tokens = lexer.ReadAll();
+
+        Parser parser(tokens, sourceCodeFile, compilationContext);
+        parser.ParseNamespace();
+    }
+
+    // Phase 2: Type check the entire namespace tree
+    TypeChecker typeChecker(compilationContext.GetNamespaceFactory(), compilationContext.GetExpressionFactory());
+    Scope<const Type *> scope;
+    typeChecker.CheckNamespace(&scope);
+
+    // Phase 3: Locate names
+    Scope<NameInfo> nameInfoScope;
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
+    nameLocator.InitializeSymbolCounters(&nameInfoScope);
+    nameLocator.RegisterAllInfo(&nameInfoScope);
+    nameLocator.CheckNamespace(&nameInfoScope);
+
+    // Phase 4: Compile
+    Compiler compiler(typeChecker, nameLocator, compilationContext.GetNamespaceFactory());
+    std::vector<flint_bytecode::GlobalVariable> globalVariables(nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
+    std::vector<flint_bytecode::Function> functions(nameInfoScope.Get(GLOBAL_FUNCTION_COUNT).Number());
+    std::vector<flint_bytecode::NativeFunction> nativeFunctions(
+        nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
+    std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
     flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions,
                                             compiler.EntryPoint());
 
@@ -237,4 +278,208 @@ TEST_CASE("test global variable assignment", "[Compiler][Variable][Global]")
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     REQUIRE(globalVarCount == 1);
+}
+
+// ============================================================================
+// Multi-File Compilation Tests
+// ============================================================================
+
+TEST_CASE("test multi-file compilation with cross-module call", "[Compiler][MultiFile]")
+{
+    // File 1: module A with nested module Math
+    std::u32string file1 = U"module A { module Math { "
+                           U"  func Square(x: Int): Int { x * x; } "
+                           U"  func Double(x: Int): Int { x + x; } "
+                           U"} }";
+
+    // File 2: module B that uses A::Math functions
+    std::u32string file2 = U"module B { "
+                           U"  func Compute(x: Int): Int { A::Math::Square(x) + A::Math::Double(x); } "
+                           U"  func Main(): Int { Compute(5); } "
+                           U"}";
+
+    flint_bytecode::ByteCodeProgram program = CompileMultipleFiles({file1, file2});
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(globalVarCount == 0);
+    REQUIRE(structCount == 0);
+    REQUIRE(funcCount == 4); // Square, Double, Compute, Main
+}
+
+TEST_CASE("test multi-file compilation with shared global variable", "[Compiler][MultiFile]")
+{
+    // File 1: module Config with a global variable
+    std::u32string file1 = U"module Config { "
+                           U"  var multiplier: Int = 10; "
+                           U"}";
+
+    // File 2: module App that uses Config's global variable
+    std::u32string file2 = U"module App { "
+                           U"  func Apply(x: Int): Int { x * Config::multiplier; } "
+                           U"  func Main(): Int { Apply(5); } "
+                           U"}";
+
+    flint_bytecode::ByteCodeProgram program = CompileMultipleFiles({file1, file2});
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(globalVarCount == 1); // Config::multiplier
+    REQUIRE(funcCount == 3);      // multiplier#Initializer, Apply, Main
+}
+
+TEST_CASE("test multi-file compilation with three files", "[Compiler][MultiFile]")
+{
+    // File 1: module Utils
+    std::u32string file1 = U"module Utils { "
+                           U"  func Add(a: Int, b: Int): Int { a + b; } "
+                           U"}";
+
+    // File 2: module Math (uses Utils)
+    std::u32string file2 = U"module Math { "
+                           U"  func Sum3(a: Int, b: Int, c: Int): Int { Utils::Add(Utils::Add(a, b), c); } "
+                           U"}";
+
+    // File 3: module Main (uses Math)
+    std::u32string file3 = U"module Main { "
+                           U"  func Main(): Int { Math::Sum3(1, 2, 3); } "
+                           U"}";
+
+    flint_bytecode::ByteCodeProgram program = CompileMultipleFiles({file1, file2, file3});
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+    REQUIRE(funcCount == 3); // Add, Sum3, Main
+}
+
+// ============================================================================
+// Structure and Method Tests
+// ============================================================================
+
+TEST_CASE("test struct with method compiles", "[Compiler][Structure][Method]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module A { struct Counter { value: Int; "
+        U"  func get(): Int { this.value; } } "
+        U"func Main(): Int { var c = new Counter { value = 42; }; c.get(); } }");
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(structCount == 1); // Counter
+    REQUIRE(funcCount == 2);   // Counter::get + Main
+}
+
+TEST_CASE("test struct with multiple methods compiles", "[Compiler][Structure][Method]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module A { struct Vec2 { x: Int; y: Int; "
+        U"  func getX(): Int { this.x; } "
+        U"  func getY(): Int { this.y; } "
+        U"  func sum(): Int { this.x + this.y; } } "
+        U"func Main(): Int { var v = new Vec2 { x = 3; y = 4; }; v.sum(); } }");
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(structCount == 1); // Vec2
+    REQUIRE(funcCount == 4);   // getX + getY + sum + Main
+}
+
+TEST_CASE("test struct method with params compiles", "[Compiler][Structure][Method]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module A { struct Calc { value: Int; "
+        U"  func add(x: Int): Int { this.value + x; } } "
+        U"func Main(): Int { var c = new Calc { value = 10; }; c.add(5); } }");
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(structCount == 1); // Calc
+    REQUIRE(funcCount == 2);   // Calc::add + Main
+}
+
+TEST_CASE("test multiple structs compile", "[Compiler][Structure][Method]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module A { "
+        U"  struct Point { x: Int; y: Int; } "
+        U"  struct Rect { width: Int; height: Int; "
+        U"    func area(): Int { this.width * this.height; } } "
+        U"  func Main(): Int { var r = new Rect { width = 3; height = 4; }; r.area(); } }");
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(structCount == 2); // Point + Rect
+    REQUIRE(funcCount == 2);   // Rect::area + Main
+}
+
+TEST_CASE("test struct with standalone functions compile", "[Compiler][Structure][Method]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module A { "
+        U"  func helper(n: Int): Int { n * 2; } "
+        U"  struct Box { value: Int; "
+        U"    func doubled(): Int { helper(this.value); } } "
+        U"  func Main(): Int { var b = new Box { value = 5; }; b.doubled(); } }");
+
+    flint_bytecode::ByteCode byteCode;
+    program.Compile(byteCode);
+    const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
+
+    REQUIRE(bytes.size() >= 24);
+
+    int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
+    int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
+    int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
+
+    REQUIRE(globalVarCount == 0);
+    REQUIRE(structCount == 1); // Box
+    REQUIRE(funcCount == 3);   // helper + Box::doubled + Main
 }

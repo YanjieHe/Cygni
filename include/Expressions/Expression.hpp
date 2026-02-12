@@ -635,11 +635,16 @@ class StructureExpression : public Expression
   private:
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, TypeSyntax *> fields;
+    Utility::OrderPreservingMap<std::u32string, LambdaExpression *> methods;
+    std::vector<TypeSyntax *> interfaces;
 
   public:
     StructureExpression(SourceRange sourceRange, const std::vector<std::u32string> &qualifiedName,
-                        const Utility::OrderPreservingMap<std::u32string, TypeSyntax *> &fields)
-        : Expression(sourceRange), qualifiedName{qualifiedName}, fields{fields}
+                        const Utility::OrderPreservingMap<std::u32string, TypeSyntax *> &fields,
+                        const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &methods,
+                        const std::vector<TypeSyntax *> &interfaces)
+        : Expression(sourceRange), qualifiedName{qualifiedName}, fields{fields}, methods{methods},
+          interfaces{interfaces}
     {
     }
 
@@ -657,18 +662,30 @@ class StructureExpression : public Expression
     {
         return fields;
     }
+
+    const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &Methods() const
+    {
+        return methods;
+    }
+
+    const std::vector<TypeSyntax *> &Interfaces() const
+    {
+        return interfaces;
+    }
 };
 
 class InterfaceExpression : public Expression
 {
   private:
     std::vector<std::u32string> qualifiedName;
+    std::vector<TypeSyntax *> baseInterfaces;
     Utility::OrderPreservingMap<std::u32string, LambdaExpression *> methods;
 
   public:
     InterfaceExpression(SourceRange sourceRange, const std::vector<std::u32string> qualifiedName,
+                        const std::vector<TypeSyntax *> &baseInterfaces,
                         const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &methods)
-        : Expression(sourceRange), qualifiedName{qualifiedName}, methods{methods}
+        : Expression(sourceRange), qualifiedName{qualifiedName}, baseInterfaces{baseInterfaces}, methods{methods}
     {
     }
 
@@ -680,6 +697,11 @@ class InterfaceExpression : public Expression
     const std::vector<std::u32string> &QualifiedName() const
     {
         return qualifiedName;
+    }
+
+    const std::vector<TypeSyntax *> &BaseInterfaces() const
+    {
+        return baseInterfaces;
     }
 
     const Utility::OrderPreservingMap<std::u32string, LambdaExpression *> &Methods() const
