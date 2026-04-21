@@ -14,6 +14,18 @@ Cygni is a small compiler that reads Cygni source files and emits Flint bytecode
 
 If any stage fails, the corresponding exception (`LexicalException`, `ParserException`, `TreeException`, or `ScopeException`) provides file, line, and column details so the user can fix the input source.
 
+## Dependencies
+
+Cygni depends on [FlintByteCode](https://github.com/YanjieHe/FlintByteCode) for bytecode generation. It is fetched automatically via CMake's `FetchContent` during configuration.
+
+For local development, you can point CMake to a local copy of FlintByteCode to avoid fetching from GitHub and to test local changes immediately:
+
+```bash
+cmake -B build -DFETCHCONTENT_SOURCE_DIR_FLINTBYTECODE=/path/to/FlintByteCode
+```
+
+If the variable is not set, CMake will clone the `master` branch from GitHub automatically.
+
 ## Build and Run Tests
 
 ```bash
