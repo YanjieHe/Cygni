@@ -1039,7 +1039,7 @@ const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<con
         /* TODO: check if the variable is modifiable. */
         const Type *left = Visit(node->Left(), scope);
 
-        if (TypeFactory::AreTypesEqual(left, right))
+        if (TypeFactory::AreTypesEqual(left, right) || Types.IsSubtype(right, left))
         {
             return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
         }
@@ -1057,7 +1057,7 @@ const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<con
         /* TODO: check if the field is modifiable. */
         const Type *left = Visit(node->Left(), scope);
 
-        if (TypeFactory::AreTypesEqual(left, right))
+        if (TypeFactory::AreTypesEqual(left, right) || Types.IsSubtype(right, left))
         {
             return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
         }
@@ -1095,6 +1095,11 @@ const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<con
             }
             if (TypeFactory::AreTypesEqual(arrayType->ElementType(), right))
             {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
+            }
+            if (Types.IsSubtype(right, arrayType->ElementType()))
+            {
+                /* TODO: Cast */
                 return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
             }
             else

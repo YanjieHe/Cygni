@@ -259,5 +259,39 @@ Type *TypeFactory::CreateType(Type *type)
     types.push_back(type);
     return type;
 }
+
+bool TypeFactory::IsSubtype(const Type *type, const Type *potentialBase) const
+{
+    if (type->GetTypeCode() == TypeCode::Structure && potentialBase->GetTypeCode() == TypeCode::Interface)
+    {
+        for (const InterfaceType *interface : static_cast<const StructureType *>(type)->Interfaces())
+        {
+            if (AreTypesEqual(interface, potentialBase) || IsSubtype(interface, potentialBase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    else if (type->GetTypeCode() == TypeCode::Interface && potentialBase->GetTypeCode() == TypeCode::Interface)
+    {
+        const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
+        for (const InterfaceType *baseInterface : interfaceType->BaseInterfaces())
+        {
+            if (AreTypesEqual(baseInterface, potentialBase) || IsSubtype(baseInterface, potentialBase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 }; /* namespace Expressions */
 }; /* namespace Cygni */

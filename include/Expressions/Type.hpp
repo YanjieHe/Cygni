@@ -250,6 +250,7 @@ class TypeFactory
     InterfaceType *CreateInterfaceType(const std::vector<std::u32string> &qualifiedName,
                                        const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
                                        const std::vector<const InterfaceType *> &baseInterfaces);
+    bool IsSubtype(const Type *type, const Type *potentialBase) const;
 
   private:
     static bool AreOrderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b);
