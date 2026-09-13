@@ -1208,7 +1208,8 @@ const Type *TypeChecker::CheckArguments(const CallExpression *node, const Type *
         for (size_t i = 0; i < node->Arguments().size(); i++)
         {
             auto argType = Visit(node->Arguments().at(i), scope);
-            if (!TypeFactory::AreTypesEqual(argType, t->Arguments().at(i)))
+            const Type *parameterType = t->Arguments().at(i);
+            if (!TypeFactory::AreTypesEqual(argType, parameterType) && !Types.IsSubtype(argType, parameterType))
             {
                 throw TreeException(__FILE__, __LINE__,
                                     "Argument " + std::to_string(i + 1) + " type mismatch: expected '" +

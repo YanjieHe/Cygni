@@ -771,6 +771,28 @@ TEST_CASE("type check assign struct to interface and call method", "[Interface]"
     REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
 }
 
+TEST_CASE("type check pass struct to interface parameter", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+        U"} "
+        U"func Paint(d: Drawable): Int { d.draw(10, 10); } "
+        U"func Main(): Int { "
+        U"  var c = new Circle { radius = 2; }; "
+        U"  Paint(c); "
+        U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
 TEST_CASE("type check struct missing inherited interface method throws", "[Interface][Error]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
