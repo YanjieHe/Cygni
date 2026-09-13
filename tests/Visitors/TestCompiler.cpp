@@ -44,7 +44,7 @@ static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sour
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
     compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions,
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, {},
                                             compiler.EntryPoint());
 
     return program;
@@ -86,7 +86,7 @@ static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<st
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
     compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions,
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, {},
                                             compiler.EntryPoint());
 
     return program;
@@ -108,23 +108,29 @@ TEST_CASE("test compiler", "[Compiler]")
     // [8-11]:  functions count
     // [12-15]: nativeLibraries count
     // [16-19]: nativeFunctions count
-    // [20-23]: entryPoint
+    // [20-23]: interfaceMethodReferences count
+    // [24-27]: interfaces count
+    // [28-31]: entryPoint
 
-    REQUIRE(bytes.size() >= 24); // At least the header
+    REQUIRE(bytes.size() >= 32); // At least the header
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     int32_t nativeLibCount = bit_converter::bytes_to_i32(bytes.begin() + 12, true);
     int32_t nativeFuncCount = bit_converter::bytes_to_i32(bytes.begin() + 16, true);
-    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 20, true);
+    int32_t interfaceMethodRefCount = bit_converter::bytes_to_i32(bytes.begin() + 20, true);
+    int32_t interfaceCount = bit_converter::bytes_to_i32(bytes.begin() + 24, true);
+    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 28, true);
 
-    REQUIRE(globalVarCount == 0);  // No global variables
-    REQUIRE(structCount == 0);     // No structures
-    REQUIRE(funcCount == 2);       // Square and Main
-    REQUIRE(nativeLibCount == 0);  // No native libraries
-    REQUIRE(nativeFuncCount == 0); // No native functions
-    REQUIRE(entryPoint == 1);      // Main is the second function (index 1)
+    REQUIRE(globalVarCount == 0);         // No global variables
+    REQUIRE(structCount == 0);            // No structures
+    REQUIRE(funcCount == 2);              // Square and Main
+    REQUIRE(nativeLibCount == 0);         // No native libraries
+    REQUIRE(nativeFuncCount == 0);        // No native functions
+    REQUIRE(interfaceMethodRefCount == 0); // No interface method refs
+    REQUIRE(interfaceCount == 0);         // No interfaces
+    REQUIRE(entryPoint == 1);             // Main is the second function (index 1)
 }
 
 // ============================================================================
@@ -141,10 +147,10 @@ TEST_CASE("test conditional expression compilation", "[Compiler][Conditional]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
-    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 20, true);
+    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 28, true);
 
     REQUIRE(funcCount == 2);
     REQUIRE(entryPoint == 1);
@@ -161,7 +167,7 @@ TEST_CASE("test nested conditional compilation", "[Compiler][Conditional]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -182,7 +188,7 @@ TEST_CASE("test while loop compilation", "[Compiler][WhileLoop]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -199,7 +205,7 @@ TEST_CASE("test nested while loop compilation", "[Compiler][WhileLoop]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -219,7 +225,7 @@ TEST_CASE("test local variable declaration and usage", "[Compiler][Variable]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -235,7 +241,7 @@ TEST_CASE("test variable reassignment", "[Compiler][Variable]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -255,7 +261,7 @@ TEST_CASE("test global variable compilation", "[Compiler][Variable][Global]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -274,7 +280,7 @@ TEST_CASE("test global variable assignment", "[Compiler][Variable][Global]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     REQUIRE(globalVarCount == 1);
@@ -304,7 +310,7 @@ TEST_CASE("test multi-file compilation with cross-module call", "[Compiler][Mult
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
@@ -334,7 +340,7 @@ TEST_CASE("test multi-file compilation with shared global variable", "[Compiler]
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -366,7 +372,7 @@ TEST_CASE("test multi-file compilation with three files", "[Compiler][MultiFile]
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 3); // Add, Sum3, Main
@@ -387,7 +393,7 @@ TEST_CASE("test struct with method compiles", "[Compiler][Structure][Method]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -409,7 +415,7 @@ TEST_CASE("test struct with multiple methods compiles", "[Compiler][Structure][M
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -429,7 +435,7 @@ TEST_CASE("test struct method with params compiles", "[Compiler][Structure][Meth
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -451,7 +457,7 @@ TEST_CASE("test multiple structs compile", "[Compiler][Structure][Method]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -473,7 +479,7 @@ TEST_CASE("test struct with standalone functions compile", "[Compiler][Structure
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 24);
+    REQUIRE(bytes.size() >= 32);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);

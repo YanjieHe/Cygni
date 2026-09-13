@@ -1461,7 +1461,7 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
             fieldNames.push_back(Utility::UTF32ToUTF8(fieldName));
         }
         flint_bytecode::StructureMeta structureMeta(
-            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames);
+            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames, std::vector<flint_bytecode::VTableEntry>());
         int structIndex = nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number();
         structures.at(structIndex) = structureMeta;
         for (const auto &methodDecl : structDecl->Methods().GetAllItems())

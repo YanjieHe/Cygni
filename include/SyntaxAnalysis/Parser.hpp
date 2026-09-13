@@ -20,6 +20,13 @@ using namespace Cygni::Expressions;
 using ExpPtr = Expressions::Expression *;
 using TypeSyntaxPtr = Expressions::TypeSyntax *;
 
+enum class FunctionParseKind
+{
+    InterfaceMethod,
+    StructureMethod,
+    ModuleFunction
+};
+
 class Parser
 {
   private:
@@ -107,7 +114,8 @@ class Parser
 
     Expressions::VariableDeclarationExpression *VariableDeclarationStatement();
 
-    Expressions::LambdaExpression *FunctionDeclarationStatement(const std::vector<Annotation> &annotations);
+    Expressions::LambdaExpression *FunctionDeclarationStatement(const std::vector<Annotation> &annotations,
+                                                                FunctionParseKind kind);
 
     Expressions::VariableDeclarationExpression *ParseGlobalVariable();
 
@@ -136,6 +144,10 @@ class Parser
     Expressions::NewExpression *ParseNewExpression();
 
     std::vector<std::u32string> ParseNamespacePath();
+
+  private:
+    bool IsNativeFunction(const std::vector<Annotation> &annotations);
+    bool RequiresDeclaration(FunctionParseKind kind, bool isNative, std::string &errorMessage);
 };
 
 }; /* namespace SyntaxAnalysis */

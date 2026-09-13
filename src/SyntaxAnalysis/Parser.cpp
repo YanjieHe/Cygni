@@ -460,7 +460,45 @@ Expressions::VariableDeclarationExpression *Parser::VariableDeclarationStatement
     return GetExpressionFactory().Create<VariableDeclarationExpression>(Pos(start), name, typeSyntax, initializer);
 }
 
-Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::vector<Annotation> &annotations)
+bool Parser::IsNativeFunction(const std::vector<Annotation> &annotations)
+{
+    for (const auto &annotation : annotations)
+    {
+        if (annotation.Name() == U"External")
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Parser::RequiresDeclaration(FunctionParseKind kind, bool isNative, std::string &errorMessage)
+{
+    switch (kind)
+    {
+    case FunctionParseKind::InterfaceMethod:
+        errorMessage = "Interface method must be a declaration ending with ';'.";
+        return true;
+    case FunctionParseKind::StructureMethod:
+        errorMessage = "Structure method must have a function body.";
+        return false;
+    default:
+    case FunctionParseKind::ModuleFunction:
+        if (isNative)
+        {
+            errorMessage = "Native function must be a declaration ending with ';'.";
+            return true;
+        }
+        else
+        {
+            errorMessage = "Function must have a function body.";
+            return false;
+        }
+    }
+}
+
+Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::vector<Annotation> &annotations,
+                                                                   FunctionParseKind kind)
 {
     const Token &start = Look();
     Match(TokenTag::Func);
@@ -485,21 +523,37 @@ Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::v
     Match(TokenTag::RightParenthesis);
     Match(TokenTag::Colon);
     TypeSyntaxPtr returnType = ParseType();
-    if (Look().tag == TokenTag::Semicolon)
-    {
-        ExpPtr body = GetExpressionFactory().Create<DefaultExpression>(Pos(Look()), returnType);
-        Match(TokenTag::Semicolon);
 
-        return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
-                                                               annotations);
+    std::string errorMessage;
+    bool requireDeclaration = RequiresDeclaration(kind, IsNativeFunction(annotations), errorMessage);
+
+    ExpPtr body;
+    if (requireDeclaration)
+    {
+        if (Look().tag != TokenTag::Semicolon)
+        {
+            throw ParserException(
+                __FILE__, __LINE__,
+                SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+                errorMessage, nullptr);
+        }
+        body = GetExpressionFactory().Create<DefaultExpression>(Pos(Look()), returnType);
+        Match(TokenTag::Semicolon);
     }
     else
     {
-        ExpPtr body = ParseBlock();
-
-        return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
-                                                               annotations);
+        if (Look().tag != TokenTag::LeftBrace)
+        {
+            throw ParserException(
+                __FILE__, __LINE__,
+                SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+                errorMessage, nullptr);
+        }
+        body = ParseBlock();
     }
+
+    return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
+                                                           annotations);
 }
 
 Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable()
@@ -552,7 +606,7 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
     {
         if (Look().tag == TokenTag::Func)
         {
-            LambdaExpression *method = FunctionDeclarationStatement({});
+            LambdaExpression *method = FunctionDeclarationStatement({}, FunctionParseKind::StructureMethod);
             methods.AddItem(method->Name(), method);
         }
         else if (Look().tag == TokenTag::At)
@@ -560,7 +614,8 @@ Expressions::StructureExpression *Parser::ParseStructureDefinition()
             auto annotations = ParseAnnotations();
             if (Look().tag == TokenTag::Func)
             {
-                LambdaExpression *method = FunctionDeclarationStatement(annotations);
+                LambdaExpression *method =
+                    FunctionDeclarationStatement(annotations, FunctionParseKind::StructureMethod);
                 methods.AddItem(method->Name(), method);
             }
             else
@@ -616,7 +671,7 @@ Expressions::InterfaceExpression *Parser::ParseInterfaceDefinition()
     {
         if (Look().tag == TokenTag::Func)
         {
-            LambdaExpression *method = FunctionDeclarationStatement({});
+            LambdaExpression *method = FunctionDeclarationStatement({}, FunctionParseKind::InterfaceMethod);
             methods.AddItem(method->Name(), method);
         }
         else if (Look().tag == TokenTag::At)
@@ -624,7 +679,8 @@ Expressions::InterfaceExpression *Parser::ParseInterfaceDefinition()
             auto annotations = ParseAnnotations();
             if (Look().tag == TokenTag::Func)
             {
-                LambdaExpression *method = FunctionDeclarationStatement(annotations);
+                LambdaExpression *method =
+                    FunctionDeclarationStatement(annotations, FunctionParseKind::InterfaceMethod);
                 methods.AddItem(method->Name(), method);
             }
             else
@@ -634,6 +690,15 @@ Expressions::InterfaceExpression *Parser::ParseInterfaceDefinition()
                     SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
                     "Expecting a function definition.", nullptr);
             }
+        }
+        else
+        {
+            throw ParserException(
+                __FILE__, __LINE__,
+                SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+                "Unexpected token '" + Utility::EnumToString(Look().tag) +
+                    "' encountered while parsing the interface. Expected a method declaration.",
+                nullptr);
         }
     }
     Match(TokenTag::RightBrace);
@@ -748,7 +813,7 @@ void Parser::ParseNamespace()
                 break;
             }
             case TokenTag::Func: {
-                LambdaExpression *lambda = FunctionDeclarationStatement({});
+                LambdaExpression *lambda = FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
                 current->Functions().AddItem(lambda->Name(), lambda);
                 break;
             }
@@ -772,7 +837,8 @@ void Parser::ParseNamespace()
                 std::vector<Annotation> annotations = ParseAnnotations();
                 if (Look().tag == TokenTag::Func)
                 {
-                    LambdaExpression *lambda = FunctionDeclarationStatement(annotations);
+                    LambdaExpression *lambda =
+                        FunctionDeclarationStatement(annotations, FunctionParseKind::ModuleFunction);
                     current->Functions().AddItem(lambda->Name(), lambda);
                 }
                 else

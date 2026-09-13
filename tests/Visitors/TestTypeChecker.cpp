@@ -83,7 +83,7 @@ TEST_CASE("test function declaration", "[Function]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func f(x: Double, y: Double): Double { x + y; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> scope;

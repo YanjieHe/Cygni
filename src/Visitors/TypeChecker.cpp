@@ -682,21 +682,9 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
                 }
             }
 
-            for (const TypeSyntax *interfaceTypeSyntax : structDecl->Interfaces())
+            for (const InterfaceType *interfaceType : GetAllImplementedInterfaces(structureType))
             {
-                const Type *resolvedType = ResolveTypeSyntax(interfaceTypeSyntax);
-                if (resolvedType->GetTypeCode() == TypeCode::Interface)
-                {
-                    const InterfaceType *interfaceType = static_cast<const InterfaceType *>(resolvedType);
-                    CheckInterfaceImplementation(structDecl, structureType, interfaceType);
-                }
-                else
-                {
-                    throw TreeException(__FILE__, __LINE__,
-                                        "Declared type is not an interface: got '" +
-                                            Utility::EnumToString(resolvedType->GetTypeCode()) + "'.",
-                                        structDecl, nullptr);
-                }
+                CheckInterfaceImplementation(structDecl, structureType, interfaceType);
             }
         }
         else

@@ -293,13 +293,15 @@ TEST_CASE("function declaration with body", "[Function]")
     REQUIRE_NOTHROW(parser.ParseNamespace());
 }
 
-TEST_CASE("function declaration without body", "[Function]")
+TEST_CASE("function declaration without body is rejected", "[Function]")
 {
     CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"module M { func f(): Void; }");
 
-    REQUIRE_NOTHROW(parser.ParseNamespace());
+    REQUIRE_THROWS_AS(parser.ParseNamespace(), ParserException);
 }
+
+
 
 TEST_CASE("nested function calls are allowed", "[Call]")
 {
@@ -394,12 +396,163 @@ TEST_CASE("test parsing structure definition with two fields inside a namespace"
     REQUIRE(structureDefinition->QualifiedName().at(1) == U"Apple");
 }
 
-TEST_CASE("annotation on function declaration", "[Annotation]")
+TEST_CASE("test parsing interface definition with one method", "[Interface]")
 {
     CompilationContext compilationContext;
-    Parser parser = CreateParser(compilationContext, U"module M { @A(x=\"1\") func f(): Void; }");
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { func draw(width: Int, height: Int): Void; }");
 
-    REQUIRE_NOTHROW(parser.ParseNamespace());
+    InterfaceExpression *interfaceDefinition = parser.ParseInterfaceDefinition();
+    REQUIRE(interfaceDefinition->QualifiedName().size() == 1);
+    REQUIRE(interfaceDefinition->QualifiedName().back() == U"Drawable");
+    REQUIRE(interfaceDefinition->BaseInterfaces().empty());
+    REQUIRE(interfaceDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *draw = interfaceDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Name() == U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Parameters().at(0)->Name() == U"width");
+    REQUIRE(draw->Parameters().at(1)->Name() == U"height");
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Default);
+}
+
+TEST_CASE("interface method with body is rejected", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { func draw(width: Int, height: Int): Void { width * height; } }");
+
+    REQUIRE_THROWS_AS(parser.ParseInterfaceDefinition(), ParserException);
+}
+
+TEST_CASE("test parsing structure implementing an interface", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"struct Circle <: Drawable { "
+                                 U"radius: Int; "
+                                 U"func draw(width: Int, height: Int): Void { this.radius * width * height; } "
+                                 U"}");
+
+    StructureExpression *structureDefinition = parser.ParseStructureDefinition();
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Circle");
+    REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(structureDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *draw = structureDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Name() == U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Parameters().at(0)->Name() == U"width");
+    REQUIRE(draw->Parameters().at(1)->Name() == U"height");
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Block);
+}
+
+TEST_CASE("interface body with a field is rejected", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { width: Int; func draw(width: Int, height: Int): Void; }");
+
+    REQUIRE_THROWS_AS(parser.ParseInterfaceDefinition(), ParserException);
+}
+
+TEST_CASE("test parsing interface extending another interface", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Shape <: Drawable { func area(): Double; }");
+
+    InterfaceExpression *interfaceDefinition = parser.ParseInterfaceDefinition();
+    REQUIRE(interfaceDefinition->QualifiedName().size() == 1);
+    REQUIRE(interfaceDefinition->QualifiedName().back() == U"Shape");
+    REQUIRE(interfaceDefinition->BaseInterfaces().size() == 1);
+    REQUIRE(interfaceDefinition->BaseInterfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(interfaceDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *area = interfaceDefinition->Methods().GetItemByKey(U"area");
+    REQUIRE(area->Name() == U"area");
+    REQUIRE(area->Parameters().empty());
+    REQUIRE(area->Body()->NodeType() == ExpressionType::Default);
+}
+
+TEST_CASE("test parsing structure implementing multiple interfaces", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"struct Circle <: Drawable, Shape { "
+                                 U"radius: Int; "
+                                 U"func draw(width: Int, height: Int): Void { this.radius * width * height; } "
+                                 U"func area(): Double { this.radius * this.radius; } "
+                                 U"}");
+
+    StructureExpression *structureDefinition = parser.ParseStructureDefinition();
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Circle");
+    REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().size() == 2);
+    REQUIRE(structureDefinition->Interfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(structureDefinition->Interfaces().at(1)->QualifiedName().back() == U"Shape");
+    REQUIRE(structureDefinition->Methods().GetAllItems().size() == 2);
+
+    LambdaExpression *draw = structureDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Block);
+
+    LambdaExpression *area = structureDefinition->Methods().GetItemByKey(U"area");
+    REQUIRE(area->Parameters().empty());
+    REQUIRE(area->Body()->NodeType() == ExpressionType::Block);
+}
+
+TEST_CASE("single annotation on native function declaration", "[Annotation]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(
+        compilationContext,
+        U"module M { @External(Library=\"libmath.so\", EntryPoint=\"add\") func Add(x: Int, y: Int): Int; }");
+
+    parser.ParseNamespace();
+    LambdaExpression *funcDecl =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Add"});
+
+    REQUIRE(funcDecl != nullptr);
+    REQUIRE(funcDecl->IsNativeFunction());
+    REQUIRE(funcDecl->Annotations().size() == 1);
+    REQUIRE(funcDecl->Annotations().at(0).Name() == U"External");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(0).Name() == U"Library");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(0).Value()) == U"libmath.so");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(1).Name() == U"EntryPoint");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(1).Value()) == U"add");
+}
+
+TEST_CASE("multiple annotations on native function declaration", "[Annotation]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { @Doc(Comment=\"Adds two integers\") "
+                                 U"@External(Library=\"libmath.so\", EntryPoint=\"add\") "
+                                 U"func Add(x: Int, y: Int): Int; }");
+
+    parser.ParseNamespace();
+    LambdaExpression *funcDecl =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Add"});
+
+    REQUIRE(funcDecl != nullptr);
+    REQUIRE(funcDecl->IsNativeFunction());
+    REQUIRE(funcDecl->Annotations().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(0).Name() == U"Doc");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().size() == 1);
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(0).Name() == U"Comment");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(0).Value()) == U"Adds two integers");
+    REQUIRE(funcDecl->Annotations().at(1).Name() == U"External");
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().at(0).Name() == U"Library");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(1).Arguments().at(0).Value()) == U"libmath.so");
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().at(1).Name() == U"EntryPoint");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(1).Arguments().at(1).Value()) == U"add");
 }
 
 TEST_CASE("if without parentheses is rejected", "[Error]")

@@ -52,7 +52,7 @@ TEST_CASE("test variable locating", "[Variable]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Add(x: Int, y: Int): Int { var z = x + y; z; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> scope;
@@ -84,7 +84,7 @@ TEST_CASE("test single constant locating", "[Constant]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func GetValue(): Int { 42; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;
@@ -103,7 +103,7 @@ TEST_CASE("test multiple constants locating", "[Constant]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Sum(): Int { 1 + 2 + 3; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;
@@ -125,7 +125,7 @@ TEST_CASE("test function variable count", "[Function]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Compute(a: Int, b: Int): Int { var c = a; var d = b; c + d; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;
@@ -281,7 +281,7 @@ TEST_CASE("test nested block variable locating", "[Variable][Block]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Test(a: Int): Int { var b = 1; { var c = 2; a + b + c; }; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;
@@ -315,7 +315,7 @@ TEST_CASE("test conditional expression locating", "[Conditional]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Max(a: Int, b: Int): Int { if (a > b) { a; } else { b; } }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;
@@ -338,7 +338,7 @@ TEST_CASE("test while loop variable locating", "[WhileLoop]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"func Count(n: Int): Int { var i = 0; while (i < n) { i = i + 1; } i; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> typeScope;

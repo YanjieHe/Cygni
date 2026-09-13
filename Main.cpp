@@ -72,7 +72,7 @@ void Compile(const std::vector<std::string> &sourceFilePaths, const std::string 
     compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
     std::vector<flint_bytecode::NativeLibrary> nativeLibraries = compiler.GetNativeLibraries();
     flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, nativeLibraries, nativeFunctions,
-                                            compiler.EntryPoint());
+                                            {}, {}, compiler.EntryPoint());
 
     // Phase 5: Output
     ByteCode byteCode;
