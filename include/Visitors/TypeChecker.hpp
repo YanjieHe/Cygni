@@ -50,7 +50,8 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
 
   private:
     const Type *Register(const Expression *node, const Type *type);
-    bool CheckFunctionType(const Type *declaration, const Type *actual);
+    bool CheckReturnType(const Type *declaredReturn, const Type *bodyReturn);
+    bool CheckExactSignature(const CallableType *required, const CallableType *provided);
     const Type *ResolveTypeSyntax(const TypeSyntax *typeSyntax);
     StructureType *ResolveStructureDefinition(StructureExpression *structureDefinition);
     InterfaceType *ResolveInterfaceDefinition(InterfaceExpression *interfaceDefinition);

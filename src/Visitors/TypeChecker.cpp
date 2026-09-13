@@ -639,7 +639,17 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
     {
         const Type *actualType = VisitLambda(funcDecl, scope);
         const Type *declarationType = scope->Get(funcDecl->Name());
-        if (!CheckFunctionType(declarationType, actualType))
+        if (declarationType->GetTypeCode() != TypeCode::Callable || actualType->GetTypeCode() != TypeCode::Callable)
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "The function's implementation "
+                                "type does not match the "
+                                "declared function type.",
+                                funcDecl, nullptr);
+        }
+        const CallableType *declarationCallable = static_cast<const CallableType *>(declarationType);
+        const CallableType *actualCallable = static_cast<const CallableType *>(actualType);
+        if (!CheckReturnType(declarationCallable->GetReturnType(), actualCallable->GetReturnType()))
         {
             throw TreeException(__FILE__, __LINE__,
                                 "The function's implementation "
@@ -668,7 +678,18 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
             {
                 const Type *actualType = VisitLambda(method, scope);
                 const Type *declarationType = structureType->Methods().GetItemByKey(method->Name());
-                if (!CheckFunctionType(declarationType, actualType))
+                if (declarationType->GetTypeCode() != TypeCode::Callable ||
+                    actualType->GetTypeCode() != TypeCode::Callable)
+                {
+                    throw TreeException(__FILE__, __LINE__,
+                                        "The method's implementation "
+                                        "type does not match the "
+                                        "declared method type.",
+                                        method, nullptr);
+                }
+                const CallableType *declarationCallable = static_cast<const CallableType *>(declarationType);
+                const CallableType *actualCallable = static_cast<const CallableType *>(actualType);
+                if (!CheckReturnType(declarationCallable->GetReturnType(), actualCallable->GetReturnType()))
                 {
                     throw TreeException(__FILE__, __LINE__,
                                         "The method's implementation "
@@ -755,65 +776,33 @@ const Type *TypeChecker::Register(const Expression *node, const Type *type)
     return type;
 }
 
-bool TypeChecker::CheckFunctionType(const Type *declaration, const Type *actual)
+bool TypeChecker::CheckReturnType(const Type *declaredReturn, const Type *bodyReturn)
 {
-    if (declaration->GetTypeCode() == TypeCode::Callable && actual->GetTypeCode() == TypeCode::Callable)
+    if (TypeFactory::AreTypesEqual(declaredReturn, bodyReturn) || Types.IsSubtype(bodyReturn, declaredReturn))
     {
-        const CallableType *declarationCallableType = static_cast<const CallableType *>(declaration);
-        const CallableType *actualCallableType = static_cast<const CallableType *>(actual);
-        if (declarationCallableType->Arguments().size() == actualCallableType->Arguments().size())
-        {
-
-            for (size_t i = 0; i < declarationCallableType->Arguments().size(); i++)
-            {
-                if (!TypeFactory::AreTypesEqual(declarationCallableType->Arguments().at(i),
-                                                actualCallableType->Arguments().at(i)))
-                {
-
-                    return false;
-                }
-            }
-
-            if (TypeFactory::AreTypesEqual(declarationCallableType->GetReturnType(),
-                                           actualCallableType->GetReturnType()))
-            {
-
-                return true;
-            }
-            else
-            {
-                if (declarationCallableType->GetReturnType()->GetTypeCode() == TypeCode::Empty)
-                {
-                    spdlog::info("The declared function's return type is 'Void,' "
-                                 "allowing any return type from the function body.");
-
-                    return true;
-                }
-                else
-                {
-
-                    return false;
-                }
-            }
-        }
-        else
-        {
-
-            return false;
-        }
+        return true;
     }
     else
     {
-        if (declaration->GetTypeCode() != TypeCode::Callable)
-        {
-            spdlog::error("The declared function type is not callable.");
-        }
+        return declaredReturn->GetTypeCode() == TypeCode::Empty;
+    }
+}
 
-        if (actual->GetTypeCode() != TypeCode::Callable)
+bool TypeChecker::CheckExactSignature(const CallableType *required, const CallableType *provided)
+{
+    if (required->Arguments().size() == provided->Arguments().size())
+    {
+        for (size_t i = 0; i < required->Arguments().size(); i++)
         {
-            spdlog::error("The implementation type of the function is not callable.");
+            if (!TypeFactory::AreTypesEqual(required->Arguments().at(i), provided->Arguments().at(i)))
+            {
+                return false;
+            }
         }
-
+        return TypeFactory::AreTypesEqual(required->GetReturnType(), provided->GetReturnType());
+    }
+    else
+    {
         return false;
     }
 }
@@ -1238,7 +1227,7 @@ void TypeChecker::CheckInterfaceImplementation(const StructureExpression *node, 
         {
             const CallableType *interfaceMethodType = interfaceType->Methods().GetItemByKey(methodName);
             const CallableType *structureMethodType = structureType->Methods().GetItemByKey(methodName);
-            if (!CheckFunctionType(interfaceMethodType, structureMethodType))
+            if (!CheckExactSignature(interfaceMethodType, structureMethodType))
             {
                 throw TreeException(
                     __FILE__, __LINE__,

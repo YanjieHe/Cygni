@@ -811,6 +811,41 @@ TEST_CASE("type check struct missing inherited interface method throws", "[Inter
     REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
 }
 
+TEST_CASE("type check function returning subtype of declared type", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+        U"} "
+        U"func Get(): Drawable { var c = new Circle { radius = 2; }; c; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check interface method return type must match exactly", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Drawable; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int, height: Int): Circle { this; } "
+        U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
 // ============================================================================
 // New Expression Error Tests
 // ============================================================================
