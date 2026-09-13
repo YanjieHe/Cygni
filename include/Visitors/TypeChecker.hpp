@@ -61,7 +61,10 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
     const Type *CheckArguments(const CallExpression *node, const Type *callableType, Scope<const Type *> *scope);
     void CheckInterfaceImplementation(const StructureExpression *node, const StructureType *structureType,
                                       const InterfaceType *interfaceType);
+    void CheckStructureNameConflicts(const StructureExpression *node, const StructureType *structureType);
+    void CheckInterfaceNameConflicts(const InterfaceExpression *node, const InterfaceType *interfaceType);
     std::vector<const InterfaceType *> GetAllImplementedInterfaces(const StructureType *structureType);
+    std::vector<const InterfaceType *> GetAllBaseInterfaces(const InterfaceType *interfaceType);
 };
 
 }; /* namespace Visitors */

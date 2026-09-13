@@ -953,6 +953,8 @@ StructureType *TypeChecker::ResolveStructureDefinition(StructureExpression *stru
     structureType->SetMethods(resolvedMethods);
     structureType->SetInterfaces(resolvedInterfaces);
 
+    CheckStructureNameConflicts(structureDefinition, structureType);
+
     return structureType;
 }
 
@@ -992,6 +994,7 @@ InterfaceType *TypeChecker::ResolveInterfaceDefinition(InterfaceExpression *inte
         }
     }
     interfaceType->SetBaseInterfaces(resolvedBaseInterfaces);
+    CheckInterfaceNameConflicts(interfaceDefinition, interfaceType);
 
     return interfaceType;
 }
@@ -1169,6 +1172,17 @@ const Type *TypeChecker::VisitMethodCall(const CallExpression *node, Scope<const
             }
             else
             {
+                for (const InterfaceType *baseInterface : GetAllBaseInterfaces(interfaceType))
+                {
+                    if (baseInterface->Methods().ContainsKey(memberAccess->FieldName()))
+                    {
+                        const CallableType *methodType =
+                            baseInterface->Methods().GetItemByKey(memberAccess->FieldName());
+                        Register(memberAccess, methodType);
+
+                        return CheckArguments(node, methodType, scope);
+                    }
+                }
                 throw TreeException(
                     __FILE__, __LINE__,
                     "Method '" + Utility::UTF32ToUTF8(memberAccess->FieldName()) + "' is not defined in interface '" +
@@ -1251,6 +1265,98 @@ void TypeChecker::CheckInterfaceImplementation(const StructureExpression *node, 
     }
 }
 
+void TypeChecker::CheckStructureNameConflicts(const StructureExpression *node, const StructureType *structureType)
+{
+    std::unordered_set<std::u32string> fieldNames;
+    std::unordered_map<std::u32string, const CallableType *> methodSignatures;
+
+    for (const std::u32string &name : node->Fields().GetAllKeys())
+    {
+        fieldNames.insert(name);
+    }
+
+    for (const std::u32string &name : node->Methods().GetAllKeys())
+    {
+        if (fieldNames.find(name) != fieldNames.end())
+        {
+            throw TreeException(
+                __FILE__, __LINE__,
+                "Method '" + Utility::UTF32ToUTF8(name) + "' conflicts with a field of the same name in structure '" +
+                    Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                node, nullptr);
+        }
+        methodSignatures[name] = structureType->Methods().GetItemByKey(name);
+    }
+
+    for (const InterfaceType *implementedInterface : GetAllImplementedInterfaces(structureType))
+    {
+        for (const std::u32string &name : implementedInterface->Methods().GetAllKeys())
+        {
+            if (fieldNames.find(name) != fieldNames.end())
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(name) + "' required by interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", implementedInterface->QualifiedName())) +
+                        "' conflicts with a field of the same name in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+
+            const CallableType *incomingSignature = implementedInterface->Methods().GetItemByKey(name);
+            auto existing = methodSignatures.find(name);
+            if (existing == methodSignatures.end())
+            {
+                methodSignatures[name] = incomingSignature;
+            }
+            else if (!CheckExactSignature(existing->second, incomingSignature))
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(name) + "' in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) +
+                        "' does not match the method type required by interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", implementedInterface->QualifiedName())) +
+                        "'.",
+                    node, nullptr);
+            }
+        }
+    }
+}
+
+void TypeChecker::CheckInterfaceNameConflicts(const InterfaceExpression *node, const InterfaceType *interfaceType)
+{
+    std::unordered_map<std::u32string, const CallableType *> methodSignatures;
+
+    for (const std::u32string &name : node->Methods().GetAllKeys())
+    {
+        methodSignatures[name] = interfaceType->Methods().GetItemByKey(name);
+    }
+
+    for (const InterfaceType *baseInterface : GetAllBaseInterfaces(interfaceType))
+    {
+        for (const std::u32string &name : baseInterface->Methods().GetAllKeys())
+        {
+            const CallableType *incomingSignature = baseInterface->Methods().GetItemByKey(name);
+            auto existing = methodSignatures.find(name);
+            if (existing == methodSignatures.end())
+            {
+                methodSignatures[name] = incomingSignature;
+            }
+            else if (!CheckExactSignature(existing->second, incomingSignature))
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(name) + "' in interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) +
+                        "' does not match the method type inherited from interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", baseInterface->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+    }
+}
+
 std::vector<const InterfaceType *> TypeChecker::GetAllImplementedInterfaces(const StructureType *structureType)
 {
     std::unordered_set<const InterfaceType *> visited;
@@ -1258,6 +1364,30 @@ std::vector<const InterfaceType *> TypeChecker::GetAllImplementedInterfaces(cons
     for (const InterfaceType *interfaceType : structureType->Interfaces())
     {
         stack.push(interfaceType);
+    }
+    while (!stack.empty())
+    {
+        const InterfaceType *current = stack.top();
+        stack.pop();
+        if (visited.find(current) == visited.end())
+        {
+            visited.insert(current);
+            for (const InterfaceType *baseInterface : current->BaseInterfaces())
+            {
+                stack.push(baseInterface);
+            }
+        }
+    }
+
+    return std::vector<const InterfaceType *>(visited.begin(), visited.end());
+}
+std::vector<const InterfaceType *> TypeChecker::GetAllBaseInterfaces(const InterfaceType *interfaceType)
+{
+    std::unordered_set<const InterfaceType *> visited;
+    std::stack<const InterfaceType *> stack;
+    for (const InterfaceType *baseInterface : interfaceType->BaseInterfaces())
+    {
+        stack.push(baseInterface);
     }
     while (!stack.empty())
     {
