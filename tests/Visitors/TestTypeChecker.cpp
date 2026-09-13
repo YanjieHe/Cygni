@@ -697,6 +697,99 @@ TEST_CASE("type check struct with multiple methods", "[Structure][Method]")
 }
 
 // ============================================================================
+// Interface Implementation Tests
+// ============================================================================
+
+TEST_CASE("type check struct implementing interface with matching method", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+        U"} "
+        U"func Main(): Int { var c = new Circle { radius = 2; }; c.draw(10, 10); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct missing interface method throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { radius: Int; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check struct interface method signature mismatch throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int): Int { this.radius * width; } "
+        U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check assign struct to interface and call method", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"struct Circle <: Drawable { "
+        U"  radius: Int; "
+        U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+        U"} "
+        U"func Main(): Int { "
+        U"  var c = new Circle { radius = 2; }; "
+        U"  var d: Drawable = c; "
+        U"  d.draw(10, 10); "
+        U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct missing inherited interface method throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { "
+        U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+        U"interface Shape <: Drawable { func area(): Int; } "
+        U"struct Circle <: Shape { "
+        U"  radius: Int; "
+        U"  func area(): Int { this.radius * this.radius; } "
+        U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+// ============================================================================
 // New Expression Error Tests
 // ============================================================================
 

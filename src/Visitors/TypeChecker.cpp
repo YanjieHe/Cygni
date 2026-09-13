@@ -454,10 +454,10 @@ const Type *TypeChecker::VisitVariableDeclaration(const VariableDeclarationExpre
     else
     {
         const Type *leftType = ResolveTypeSyntax(node->GetTypeSyntax());
-        if (TypeFactory::AreTypesEqual(leftType, initializer))
+        if (TypeFactory::AreTypesEqual(leftType, initializer) || Types.IsSubtype(initializer, leftType))
         {
-            scope->Declare(node->Name(), initializer);
-            Register(node, initializer);
+            scope->Declare(node->Name(), leftType);
+            Register(node, leftType);
         }
         else
         {
