@@ -79,7 +79,8 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
     void CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &globalVariables,
                           std::vector<flint_bytecode::Function> &functions,
                           std::vector<flint_bytecode::NativeFunction> &nativeFunctions,
-                          std::vector<flint_bytecode::StructureMeta> &structures);
+                          std::vector<flint_bytecode::StructureMeta> &structures,
+                          std::vector<flint_bytecode::InterfaceMeta> &interfaces);
 
     int EntryPoint() const;
     flint_bytecode::Byte AllocateConstant(std::vector<flint_bytecode::Constant> &constantPool,

@@ -43,8 +43,9 @@ static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sour
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, {},
+    std::vector<flint_bytecode::InterfaceMeta> interfaces(nameInfoScope.Get(GLOBAL_INTERFACE_COUNT).Number());
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, interfaces,
                                             compiler.EntryPoint());
 
     return program;
@@ -85,8 +86,9 @@ static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<st
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, {},
+    std::vector<flint_bytecode::InterfaceMeta> interfaces(nameInfoScope.Get(GLOBAL_INTERFACE_COUNT).Number());
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, interfaces,
                                             compiler.EntryPoint());
 
     return program;

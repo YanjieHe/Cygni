@@ -1400,7 +1400,8 @@ std::vector<flint_bytecode::NativeLibrary> Compiler::GetNativeLibraries()
 void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &globalVariables,
                                 std::vector<flint_bytecode::Function> &functions,
                                 std::vector<flint_bytecode::NativeFunction> &nativeFunctions,
-                                std::vector<flint_bytecode::StructureMeta> &structures)
+                                std::vector<flint_bytecode::StructureMeta> &structures,
+                                std::vector<flint_bytecode::InterfaceMeta> &interfaces)
 {
     Namespace *top = namespaceStack.top();
 
@@ -1461,7 +1462,8 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
             fieldNames.push_back(Utility::UTF32ToUTF8(fieldName));
         }
         flint_bytecode::StructureMeta structureMeta(
-            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames, std::vector<flint_bytecode::VTableEntry>());
+            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames,
+            std::vector<flint_bytecode::VTableEntry>());
         int structIndex = nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number();
         structures.at(structIndex) = structureMeta;
         for (const auto &methodDecl : structDecl->Methods().GetAllItems())
@@ -1472,10 +1474,24 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
         }
     }
 
+    for (const auto &interfaceDecl : top->Interfaces().GetAllItems())
+    {
+        std::vector<std::string> methodNames;
+        for (const auto &methodDecl : interfaceDecl->Methods().GetAllItems())
+        {
+            methodNames.push_back(Utility::UTF32ToUTF8(methodDecl->Name()));
+        }
+        int interfaceIndex = nameLocator.GetNameInfo(interfaceDecl, LocationKind::Interface).Number();
+        flint_bytecode::InterfaceMeta interfaceMeta(
+            interfaceIndex, Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceDecl->QualifiedName())),
+            methodNames);
+        interfaces.at(interfaceIndex) = interfaceMeta;
+    }
+
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
-        CompileNamespace(globalVariables, functions, nativeFunctions, structures);
+        CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
         namespaceStack.pop();
         spdlog::info("Finish compiling namespace \"{}\".", Utility::UTF32ToUTF8(current->Name()));
     }

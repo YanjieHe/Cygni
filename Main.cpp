@@ -69,10 +69,11 @@ void Compile(const std::vector<std::string> &sourceFilePaths, const std::string 
     std::vector<flint_bytecode::NativeFunction> nativeFunctions(
         nameInfoScope.Get(GLOBAL_NATIVE_FUNCTION_COUNT).Number());
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
-    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures);
+    std::vector<flint_bytecode::InterfaceMeta> interfaces(nameInfoScope.Get(GLOBAL_INTERFACE_COUNT).Number());
+    compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
     std::vector<flint_bytecode::NativeLibrary> nativeLibraries = compiler.GetNativeLibraries();
     flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, nativeLibraries, nativeFunctions,
-                                            {}, {}, compiler.EntryPoint());
+                                            {}, interfaces, compiler.EntryPoint());
 
     // Phase 5: Output
     ByteCode byteCode;
