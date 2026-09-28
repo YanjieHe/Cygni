@@ -1,6 +1,7 @@
 #ifndef CYGNI_EXPRESSIONS_TYPE_HPP
 #define CYGNI_EXPRESSIONS_TYPE_HPP
 #include "Utility/OrderPreservingMap.hpp"
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -25,6 +26,12 @@ enum class TypeCode
     Interface = 11,
     Union = 12,
     Unknown = 13
+};
+
+enum class InterfaceMethodFlatteningState
+{
+    NotStarted,
+    Completed
 };
 
 class Type
@@ -131,12 +138,15 @@ class InterfaceType : public Type
     std::vector<std::u32string> qualifiedName;
     Utility::OrderPreservingMap<std::u32string, const CallableType *> methods;
     std::vector<const InterfaceType *> baseInterfaces;
+    InterfaceMethodFlatteningState flatteningState;
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> flattenedMethods;
 
   public:
     InterfaceType(const std::vector<std::u32string> &qualifiedName,
                   const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
                   const std::vector<const InterfaceType *> &baseInterfaces)
-        : qualifiedName{qualifiedName}, methods{methods}, baseInterfaces{baseInterfaces}
+        : qualifiedName{qualifiedName}, methods{methods}, baseInterfaces{baseInterfaces},
+          flatteningState{InterfaceMethodFlatteningState::NotStarted}
     {
     }
     TypeCode GetTypeCode() const override
@@ -163,6 +173,16 @@ class InterfaceType : public Type
     {
         baseInterfaces = newBaseInterfaces;
     }
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &FlattenedMethods() const
+    {
+        return flattenedMethods;
+    }
+    void FlattenMethods();
+
+  private:
+    static void FlattenMethodsRecursively(
+        const InterfaceType *current, std::unordered_set<const InterfaceType *> &visited,
+        Utility::OrderPreservingMap<std::u32string, const CallableType *> &methodsResult);
 };
 
 class StructureType : public Type

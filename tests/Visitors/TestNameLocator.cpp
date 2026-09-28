@@ -48,6 +48,14 @@ static std::optional<NameInfo> FindLocalVariableInfo(NameLocator &nameLocator, c
     return std::nullopt;
 }
 
+static CallExpression *GetOnlyCallInFunction(Parser &parser, const std::vector<std::u32string> &functionName)
+{
+    LambdaExpression *function =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), functionName);
+    BlockExpression *body = static_cast<BlockExpression *>(function->Body());
+    return static_cast<CallExpression *>(body->Expressions().front());
+}
+
 TEST_CASE("test variable locating", "[Variable]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
@@ -59,7 +67,7 @@ TEST_CASE("test variable locating", "[Variable]")
     typeChecker.Visit(exp, &scope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     auto x = FindLocalVariableInfo(nameLocator, U"x");
@@ -91,7 +99,7 @@ TEST_CASE("test single constant locating", "[Constant]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     // Check that the lambda has constant count info
@@ -110,7 +118,7 @@ TEST_CASE("test multiple constants locating", "[Constant]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     REQUIRE(nameLocator.ExistsNameInfo(exp, LocationKind::FunctionConstantCount));
@@ -132,7 +140,7 @@ TEST_CASE("test function variable count", "[Function]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     // 2 parameters + 2 local variables = 4
@@ -155,7 +163,7 @@ TEST_CASE("test function locating in namespace", "[Function][Namespace]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
@@ -177,7 +185,7 @@ TEST_CASE("test multiple functions locating in namespace", "[Function][Namespace
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
@@ -207,7 +215,7 @@ TEST_CASE("test global variable locating", "[GlobalVariable][Namespace]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
@@ -226,9 +234,10 @@ TEST_CASE("test structure locating", "[Structure][Namespace]")
     Cygni::Compilation::CompilationContext compilationContext;
     Parser parser = CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } }");
     parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
@@ -257,7 +266,7 @@ TEST_CASE("test CheckNamespace processes function body", "[Namespace]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
     nameLocator.CheckNamespace(&nameScope);
@@ -288,7 +297,7 @@ TEST_CASE("test nested block variable locating", "[Variable][Block]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     auto a = FindLocalVariableInfo(nameLocator, U"a");
@@ -322,7 +331,7 @@ TEST_CASE("test conditional expression locating", "[Conditional]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     auto a = FindLocalVariableInfo(nameLocator, U"a");
@@ -345,7 +354,7 @@ TEST_CASE("test while loop variable locating", "[WhileLoop]")
     typeChecker.Visit(exp, &typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.Visit(exp, &nameScope);
 
     auto n = FindLocalVariableInfo(nameLocator, U"n");
@@ -374,7 +383,7 @@ TEST_CASE("test structure with method registration", "[Structure][Method]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
@@ -408,7 +417,7 @@ TEST_CASE("test method this at slot 0", "[Structure][Method]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
     nameLocator.CheckNamespace(&nameScope);
@@ -437,7 +446,7 @@ TEST_CASE("test method params start at slot 1", "[Structure][Method]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
     nameLocator.CheckNamespace(&nameScope);
@@ -464,7 +473,7 @@ TEST_CASE("test method with local variables", "[Structure][Method]")
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
     nameLocator.CheckNamespace(&nameScope);
@@ -494,11 +503,192 @@ TEST_CASE("test struct methods counted in global function count", "[Structure][M
     typeChecker.CheckNamespace(&typeScope);
 
     Scope<NameInfo> nameScope;
-    NameLocator nameLocator(parser.GetNamespaceFactory());
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
 
     // standalone + read + calibrate = 3 functions
     REQUIRE(nameScope.Get(GLOBAL_FUNCTION_COUNT).Number() == 3);
     REQUIRE(nameScope.Get(GLOBAL_STRUCTURE_COUNT).Number() == 1);
+}
+
+// ============================================================================
+// Method Call Tests
+// ============================================================================
+
+TEST_CASE("locate structure method call as a statically known function", "[Structure][Method][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { "
+                                 U"  func helper(): Int { 0; } "
+                                 U"  struct Warrior { health: Int; "
+                                 U"    func heal(amount: Int): Int { this.health + amount; } } "
+                                 U"  func restore(warrior: Warrior): Int { warrior.heal(10); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"restore"});
+    const MemberExpression *member = static_cast<const MemberExpression *>(call->Function());
+    StructureExpression *warrior =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Warrior"});
+    LambdaExpression *heal = warrior->Methods().GetItemByKey(U"heal");
+
+    REQUIRE(nameLocator.ExistsNameInfo(call, LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(heal, LocationKind::Function).Number());
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Function).Number() != 0);
+    REQUIRE_FALSE(nameLocator.ExistsNameInfo(call, LocationKind::Interface));
+    REQUIRE_FALSE(nameLocator.ExistsNameInfo(call, LocationKind::InterfaceMethod));
+
+    REQUIRE(nameLocator.ExistsNameInfo(member->GetExpression(), LocationKind::FunctionVariable));
+    REQUIRE(nameLocator.GetNameInfo(member->GetExpression(), LocationKind::FunctionVariable).Number() == 0);
+    REQUIRE(nameLocator.ExistsNameInfo(call->Arguments().front(), LocationKind::FunctionConstant));
+
+    LambdaExpression *restore =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"restore"});
+    REQUIRE(nameLocator.GetNameInfo(restore, LocationKind::FunctionConstantCount).Number() == 1);
+}
+
+TEST_CASE("locate interface method call with interface and method indices", "[Interface][Method][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { "
+                                 U"  interface Named { func name(): String; } "
+                                 U"  interface Combatant { func level(): Int; func attack(): Int; } "
+                                 U"  func fight(target: Combatant): Int { target.attack(); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"fight"});
+    InterfaceExpression *combatant =
+        parser.GetNamespaceFactory().SearchInterface(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Combatant"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(call, LocationKind::Interface));
+    REQUIRE(nameLocator.ExistsNameInfo(call, LocationKind::InterfaceMethod));
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Interface).Number() ==
+            nameLocator.GetNameInfo(combatant, LocationKind::Interface).Number());
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Interface).Number() == 1);
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::InterfaceMethod).Number() == 1);
+    REQUIRE_FALSE(nameLocator.ExistsNameInfo(call, LocationKind::Function));
+}
+
+TEST_CASE("locate inherited interface method using flattened method order", "[Interface][Method][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { "
+                                 U"  interface Movable { func move(): Int; func stop(): Int; } "
+                                 U"  interface Damageable { func takeDamage(): Int; } "
+                                 U"  interface Player <: Movable, Damageable { func useItem(): Int; } "
+                                 U"  func react(player: Player): Int { player.takeDamage(); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"react"});
+    InterfaceExpression *player =
+        parser.GetNamespaceFactory().SearchInterface(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Player"});
+    InterfaceExpression *damageable =
+        parser.GetNamespaceFactory().SearchInterface(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Damageable"});
+
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Interface).Number() ==
+            nameLocator.GetNameInfo(player, LocationKind::Interface).Number());
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::Interface).Number() !=
+            nameLocator.GetNameInfo(damageable, LocationKind::Interface).Number());
+    REQUIRE(nameLocator.GetNameInfo(call, LocationKind::InterfaceMethod).Number() == 2);
+}
+
+TEST_CASE("same method slot in different interfaces uses different interface indices", "[Interface][Method][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { "
+                                 U"  interface Combatant { func level(): Int; } "
+                                 U"  interface QuestTarget { func level(): Int; } "
+                                 U"  func combatLevel(value: Combatant): Int { value.level(); } "
+                                 U"  func questLevel(value: QuestTarget): Int { value.level(); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    CallExpression *combatCall = GetOnlyCallInFunction(parser, {U"M", U"combatLevel"});
+    CallExpression *questCall = GetOnlyCallInFunction(parser, {U"M", U"questLevel"});
+
+    REQUIRE(nameLocator.GetNameInfo(combatCall, LocationKind::InterfaceMethod).Number() == 0);
+    REQUIRE(nameLocator.GetNameInfo(questCall, LocationKind::InterfaceMethod).Number() == 0);
+    REQUIRE(nameLocator.GetNameInfo(combatCall, LocationKind::Interface).Number() !=
+            nameLocator.GetNameInfo(questCall, LocationKind::Interface).Number());
+}
+
+TEST_CASE("locate function call nested inside a method receiver", "[Structure][Method][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { "
+                                 U"  struct Warrior { func ready(): Int { 1; } } "
+                                 U"  func createWarrior(): Warrior { new Warrior { }; } "
+                                 U"  func prepare(): Int { createWarrior().ready(); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> nameScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&nameScope);
+    nameLocator.RegisterAllInfo(&nameScope);
+    nameLocator.CheckNamespace(&nameScope);
+
+    CallExpression *methodCall = GetOnlyCallInFunction(parser, {U"M", U"prepare"});
+    const MemberExpression *member = static_cast<const MemberExpression *>(methodCall->Function());
+    const CallExpression *receiverCall = static_cast<const CallExpression *>(member->GetExpression());
+    LambdaExpression *createWarrior =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"createWarrior"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(receiverCall->Function(), LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(receiverCall->Function(), LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(createWarrior, LocationKind::Function).Number());
+    REQUIRE(nameLocator.ExistsNameInfo(methodCall, LocationKind::Function));
 }

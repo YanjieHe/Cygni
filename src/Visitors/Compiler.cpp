@@ -1456,30 +1456,63 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
 
     for (const auto &structDecl : top->Structures().GetAllItems())
     {
+        const Type *type = typeChecker.GetType(structDecl);
+        if (type->GetTypeCode() != TypeCode::Structure)
+        {
+            throw CompilationException(__FILE__, __LINE__, "Expected a structure type.", structDecl, nullptr);
+        }
+        const StructureType *structureType = static_cast<const StructureType *>(type);
+
         std::vector<std::string> fieldNames;
         for (const auto &fieldName : structDecl->Fields().GetAllKeys())
         {
             fieldNames.push_back(Utility::UTF32ToUTF8(fieldName));
         }
-        flint_bytecode::StructureMeta structureMeta(
-            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames,
-            std::vector<flint_bytecode::VTableEntry>());
-        int structIndex = nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number();
-        structures.at(structIndex) = structureMeta;
         for (const auto &methodDecl : structDecl->Methods().GetAllItems())
         {
             auto method = CompileFunction(Utility::UTF32ToUTF8(methodDecl->Name()), methodDecl);
             int index = nameLocator.GetNameInfo(methodDecl, LocationKind::Function).Number();
             functions.at(index) = method;
         }
+
+        std::vector<flint_bytecode::VTableEntry> vtableEntries;
+        for (const InterfaceType *interfaceType : CollectImplementedInterfaces(structureType))
+        {
+            InterfaceExpression *interfaceDecl =
+                namespaceFactory.SearchInterface(namespaceStack.top(), interfaceType->QualifiedName());
+            int interfaceIndex = nameLocator.GetNameInfo(interfaceDecl, LocationKind::Interface).Number();
+
+            std::vector<int32_t> methodFunctionIndices;
+            for (const std::u32string &methodName : interfaceType->FlattenedMethods().GetAllKeys())
+            {
+                LambdaExpression *methodDecl = structDecl->Methods().GetItemByKey(methodName);
+
+                int functionIndex = nameLocator.GetNameInfo(methodDecl, LocationKind::Function).Number();
+                methodFunctionIndices.push_back(functionIndex);
+            }
+            vtableEntries.push_back(flint_bytecode::VTableEntry(interfaceIndex, methodFunctionIndices));
+        }
+
+        flint_bytecode::StructureMeta structureMeta(
+            Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structDecl->QualifiedName())), fieldNames,
+            vtableEntries);
+        int structIndex = nameLocator.GetNameInfo(structDecl, LocationKind::Structure).Number();
+        structures.at(structIndex) = structureMeta;
     }
 
     for (const auto &interfaceDecl : top->Interfaces().GetAllItems())
     {
-        std::vector<std::string> methodNames;
-        for (const auto &methodDecl : interfaceDecl->Methods().GetAllItems())
+        const Type *type = typeChecker.GetType(interfaceDecl);
+        if (type->GetTypeCode() != TypeCode::Interface)
         {
-            methodNames.push_back(Utility::UTF32ToUTF8(methodDecl->Name()));
+            throw CompilationException(__FILE__, __LINE__, "Expected an interface type.", interfaceDecl, nullptr);
+        }
+        const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
+
+        std::vector<std::string> methodNames;
+        for (const std::u32string &methodName : interfaceType->FlattenedMethods().GetAllKeys())
+        {
+            methodNames.push_back(Utility::UTF32ToUTF8(methodName));
         }
         int interfaceIndex = nameLocator.GetNameInfo(interfaceDecl, LocationKind::Interface).Number();
         flint_bytecode::InterfaceMeta interfaceMeta(
@@ -1628,6 +1661,37 @@ void Compiler::VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
         throw CompilationException(
             __FILE__, __LINE__, "Method call expression's function part is expected to be a member access expression.",
             node, nullptr);
+    }
+}
+std::vector<const InterfaceType *> Compiler::CollectImplementedInterfaces(const StructureType *structureType)
+{
+    std::unordered_set<const InterfaceType *> visited;
+    std::vector<const InterfaceType *> result;
+    for (const InterfaceType *interfaceType : structureType->Interfaces())
+    {
+        CollectImplementedInterfacesRecursively(interfaceType, visited, result);
+    }
+
+    return result;
+}
+void Compiler::CollectImplementedInterfacesRecursively(const InterfaceType *interfaceType,
+                                                       std::unordered_set<const InterfaceType *> &visited,
+                                                       std::vector<const InterfaceType *> &result)
+{
+    if (visited.find(interfaceType) != visited.end())
+    {
+        return;
+    }
+    else
+    {
+        visited.insert(interfaceType);
+
+        for (const InterfaceType *baseInterface : interfaceType->BaseInterfaces())
+        {
+            CollectImplementedInterfacesRecursively(baseInterface, visited, result);
+        }
+
+        result.push_back(interfaceType);
     }
 }
 }; /* namespace Visitors */

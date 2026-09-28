@@ -9,6 +9,49 @@ namespace Cygni
 namespace Expressions
 {
 
+void InterfaceType::FlattenMethods()
+{
+    if (flatteningState == InterfaceMethodFlatteningState::NotStarted)
+    {
+        std::unordered_set<const InterfaceType *> visited;
+        Utility::OrderPreservingMap<std::u32string, const CallableType *> methodsResult;
+
+        FlattenMethodsRecursively(this, visited, methodsResult);
+
+        flattenedMethods = methodsResult;
+        flatteningState = InterfaceMethodFlatteningState::Completed;
+    }
+}
+void InterfaceType::FlattenMethodsRecursively(
+    const InterfaceType *current, std::unordered_set<const InterfaceType *> &visited,
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> &methodsResult)
+{
+    if (visited.find(current) == visited.end())
+    {
+        visited.insert(current);
+
+        for (const InterfaceType *base : current->BaseInterfaces())
+        {
+            FlattenMethodsRecursively(base, visited, methodsResult);
+        }
+
+        for (const std::u32string &methodName : current->Methods().GetAllKeys())
+        {
+            if (!methodsResult.ContainsKey(methodName))
+            {
+                /* The type checker has already verified that inherited methods with the same name have
+                   identical signatures. The first occurrence therefore determines the flattened slot, and
+                   subsequent occurrences can be ignored. */
+                methodsResult.AddItem(methodName, current->Methods().GetItemByKey(methodName));
+            }
+        }
+    }
+    else
+    {
+        /* This interface has already been processed through another inheritance path, so skip it. */
+    }
+}
+
 TypeFactory::~TypeFactory()
 {
     for (auto type : types)

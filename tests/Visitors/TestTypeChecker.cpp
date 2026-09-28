@@ -19,6 +19,14 @@ static Parser CreateParser(Cygni::Compilation::CompilationContext &compilationCo
     return Parser(tokens, sourceCodeFile, compilationContext);
 }
 
+static const InterfaceType *GetInterfaceType(Parser &parser, TypeChecker &typeChecker,
+                                             const std::u32string &interfaceName)
+{
+    Namespace *module = parser.GetNamespaceFactory().GetRoot()->Children().GetItemByKey(U"M");
+    InterfaceExpression *interfaceExpression = module->Interfaces().GetItemByKey(interfaceName);
+    return static_cast<const InterfaceType *>(typeChecker.GetType(interfaceExpression));
+}
+
 TEST_CASE("test (36 / 9)", "[Arithmetic]")
 {
     Cygni::Compilation::CompilationContext compilationContext;
@@ -893,6 +901,129 @@ TEST_CASE("type check call parent interface method on child interface", "[Interf
 
     Scope<const Type *> scope;
     REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check interface self-inheritance reports a cycle", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: A { func a(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check direct interface inheritance cycle reports an error", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: B { func a(): Int; } "
+                                                     U"interface B <: A { func b(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check transitive interface inheritance cycle reports an error", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: B { func a(): Int; } "
+                                                     U"interface B <: C { func b(): Int; } "
+                                                     U"interface C <: A { func c(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check diamond interface inheritance is not a cycle", "[Interface][Cycle]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A { func a(): Int; } "
+                                                     U"interface B <: A { func b(): Int; } "
+                                                     U"interface C <: A { func c(): Int; } "
+                                                     U"interface D <: B, C { func d(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("flatten player abilities in parent declaration order", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Movable { func move(): Int; func stop(): Int; } "
+                                                     U"interface Damageable { func takeDamage(): Int; } "
+                                                     U"interface Player <: Movable, Damageable { "
+                                                     U"  func useItem(): Int; "
+                                                     U"  func interact(): Int; "
+                                                     U"} "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Player");
+    const std::vector<std::u32string> expectedMethodNames = {U"move", U"stop", U"takeDamage", U"useItem",
+                                                             U"interact"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
+}
+
+TEST_CASE("flatten monster abilities deduplicates shared entity methods", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Entity { func id(): Int; } "
+                                                     U"interface Movable <: Entity { func move(): Int; } "
+                                                     U"interface Attackable <: Entity { func attack(): Int; } "
+                                                     U"interface Monster <: Movable, Attackable { func dropLoot(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Monster");
+    const std::vector<std::u32string> expectedMethodNames = {U"id", U"move", U"attack", U"dropLoot"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
+}
+
+TEST_CASE("flatten boss abilities merges compatible level requirements", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Combatant { func level(): Int; } "
+                                                     U"interface QuestTarget { func level(): Int; } "
+                                                     U"interface Boss <: Combatant, QuestTarget { func enrage(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Boss");
+    const std::vector<std::u32string> expectedMethodNames = {U"level", U"enrage"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
 }
 
 // ============================================================================

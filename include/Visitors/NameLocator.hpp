@@ -5,6 +5,7 @@
 #include "Utility/HashPair.hpp"
 #include "Visitors/Scope.hpp"
 #include "Visitors/Visitor.hpp"
+#include "Visitors/TypeChecker.hpp"
 #include <stack>
 
 namespace Cygni
@@ -24,6 +25,7 @@ enum class LocationKind
     NativeFunction,
     Structure,
     Interface,
+    InterfaceMethod,
     GlobalVariableCount,
     GlobalFunctionCount,
     GlobalNativeFunctionCount,
@@ -63,9 +65,10 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
     std::unordered_map<std::pair<const Expression *, LocationKind>, NameInfo, Utility::HashPair> nameInfoTable;
     NamespaceFactory &namespaceFactory;
     std::stack<Namespace *> namespaceStack;
+    TypeChecker& typeChecker;
 
   public:
-    NameLocator(NamespaceFactory &namespaceFactory);
+    NameLocator(NamespaceFactory &namespaceFactory, TypeChecker& typeChecker);
     const std::unordered_map<std::pair<const Expression *, LocationKind>, NameInfo, Utility::HashPair> &NameInfoTable()
     {
         return nameInfoTable;
@@ -100,6 +103,7 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
     void RegisterAllInfo(Scope<NameInfo> *scope);
     void InitializeSymbolCounters(Scope<NameInfo> *scope);
     void VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent);
+    void VisitMethodCall(const CallExpression* node, Scope<NameInfo>* scope);
 
   private:
     void Register(const Expression *node, const NameInfo &nameInfo);

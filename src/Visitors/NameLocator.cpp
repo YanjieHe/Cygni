@@ -7,7 +7,8 @@ namespace Cygni
 namespace Visitors
 {
 
-NameLocator::NameLocator(NamespaceFactory &namespaceFactory) : namespaceFactory{namespaceFactory}
+NameLocator::NameLocator(NamespaceFactory &namespaceFactory, TypeChecker &typeChecker)
+    : namespaceFactory{namespaceFactory}, typeChecker{typeChecker}
 {
     namespaceStack.push(namespaceFactory.GetRoot());
 }
@@ -99,7 +100,14 @@ void NameLocator::VisitConditional(const ConditionalExpression *node, Scope<Name
 }
 void NameLocator::VisitCall(const CallExpression *node, Scope<NameInfo> *scope)
 {
-    Visit(node->Function(), scope);
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    {
+        VisitMethodCall(node, scope);
+    }
+    else
+    {
+        Visit(node->Function(), scope);
+    }
     for (const auto &arg : node->Arguments())
     {
         Visit(arg, scope);
@@ -301,6 +309,77 @@ void NameLocator::VisitMethod(const LambdaExpression *node, Scope<NameInfo> *par
 
     Register(node, NameInfo(LocationKind::FunctionVariableCount, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
     Register(node, NameInfo(LocationKind::FunctionConstantCount, scope.Get(LOCAL_CONSTANT_COUNT).Number()));
+}
+
+void NameLocator::VisitMethodCall(const CallExpression *node, Scope<NameInfo> *scope)
+{
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    {
+        const MemberExpression *member = static_cast<const MemberExpression *>(node->Function());
+        Visit(member->GetExpression(), scope);
+        const Type *receiverType = typeChecker.GetType(member->GetExpression());
+
+        if (receiverType->GetTypeCode() == TypeCode::Structure)
+        {
+            const StructureType *structureType = static_cast<const StructureType *>(receiverType);
+            if (structureType->Methods().ContainsKey(member->FieldName()))
+            {
+                StructureExpression *structureDefinition =
+                    namespaceFactory.SearchStructure(namespaceStack.top(), structureType->QualifiedName());
+
+                LambdaExpression *methodDefinition = structureDefinition->Methods().GetItemByKey(member->FieldName());
+
+                const NameInfo &methodInfo = GetNameInfo(methodDefinition, LocationKind::Function);
+                Register(node, NameInfo(LocationKind::Function, methodInfo.Number()));
+            }
+            else if (structureType->Fields().ContainsKey(member->FieldName()))
+            {
+                /*
+                 * Callable fields are resolved at runtime. Unlike structure methods,
+                 * they do not have a statically determined function index.
+                 */
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Member '" + Utility::UTF32ToUTF8(member->FieldName()) + "' is not defined in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else if (receiverType->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceType = static_cast<const InterfaceType *>(receiverType);
+            if (interfaceType->FlattenedMethods().ContainsKey(member->FieldName()))
+            {
+                InterfaceExpression *interfaceDefinition =
+                    namespaceFactory.SearchInterface(namespaceStack.top(), interfaceType->QualifiedName());
+                const NameInfo &interfaceInfo = GetNameInfo(interfaceDefinition, LocationKind::Interface);
+
+                Register(node, NameInfo(LocationKind::Interface, interfaceInfo.Number()));
+                int methodIndex = interfaceType->FlattenedMethods().GetIndexByKey(member->FieldName());
+                Register(node, NameInfo(LocationKind::InterfaceMethod, static_cast<int>(methodIndex)));
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(member->FieldName()) + "' is not defined in interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__, "Expected a structure or interface receiver for method call.", node,
+                                nullptr);
+        }
+    }
+    else
+    {
+        throw TreeException(__FILE__, __LINE__, "Expected a member access expression for method call.", node, nullptr);
+    }
 }
 
 }; /* namespace Visitors */

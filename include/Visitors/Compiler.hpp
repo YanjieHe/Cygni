@@ -91,6 +91,12 @@ class Compiler : public ExpressionVisitor<void, ByteCode &, std::vector<flint_by
                           std::vector<flint_bytecode::Constant> &constantPool);
     void VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
                          std::vector<flint_bytecode::Constant> &constantPool);
+
+  private:
+    std::vector<const InterfaceType *> CollectImplementedInterfaces(const StructureType *structureType);
+    void CollectImplementedInterfacesRecursively(const InterfaceType *interfaceType,
+                                                 std::unordered_set<const InterfaceType *> &visited,
+                                                 std::vector<const InterfaceType *> &result);
 };
 
 inline const size_t MAX_CONSTANT_POOL_SIZE = 255;

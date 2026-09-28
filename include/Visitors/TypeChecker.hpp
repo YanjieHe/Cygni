@@ -6,6 +6,7 @@
 #include "Visitors/Scope.hpp"
 #include "Visitors/Visitor.hpp"
 #include <stack>
+#include <functional>
 
 namespace Cygni
 {
@@ -65,6 +66,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
     void CheckInterfaceNameConflicts(const InterfaceExpression *node, const InterfaceType *interfaceType);
     std::vector<const InterfaceType *> GetAllImplementedInterfaces(const StructureType *structureType);
     std::vector<const InterfaceType *> GetAllBaseInterfaces(const InterfaceType *interfaceType);
+    bool HasCycle(const InterfaceType *interfaceType);
 };
 
 }; /* namespace Visitors */

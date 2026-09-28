@@ -51,7 +51,7 @@ void Compile(const std::vector<std::string> &sourceFilePaths, const std::string 
 
     // Phase 3: Locate names
     Scope<NameInfo> nameInfoScope;
-    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
     nameLocator.CheckNamespace(&nameInfoScope);

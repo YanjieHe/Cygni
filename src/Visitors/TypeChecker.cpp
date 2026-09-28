@@ -4,6 +4,7 @@
 #include "Utility/StringUtils.hpp"
 #include "Utility/UTF32Functions.hpp"
 #include <spdlog/spdlog.h>
+#include <functional>
 #include <unordered_set>
 
 namespace Cygni
@@ -994,7 +995,19 @@ InterfaceType *TypeChecker::ResolveInterfaceDefinition(InterfaceExpression *inte
         }
     }
     interfaceType->SetBaseInterfaces(resolvedBaseInterfaces);
+
+    if (HasCycle(interfaceType))
+    {
+        throw TreeException(
+            __FILE__, __LINE__,
+            "Cyclic inheritance detected for interface '" +
+                Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+            interfaceDefinition, nullptr);
+    }
+
     CheckInterfaceNameConflicts(interfaceDefinition, interfaceType);
+
+    interfaceType->FlattenMethods();
 
     return interfaceType;
 }
@@ -1404,6 +1417,34 @@ std::vector<const InterfaceType *> TypeChecker::GetAllBaseInterfaces(const Inter
     }
 
     return std::vector<const InterfaceType *>(visited.begin(), visited.end());
+}
+bool TypeChecker::HasCycle(const InterfaceType *interfaceType)
+{
+    const int WHITE = 0;
+    const int GRAY = 1;
+    const int BLACK = 2;
+
+    std::unordered_map<const InterfaceType*, int> color;
+
+    std::function<bool(const InterfaceType*)> dfs = [&dfs, &color](const InterfaceType* u) -> bool {
+        color[u] = GRAY;
+
+        for (const InterfaceType* base : u->BaseInterfaces()) {
+            int c = color[base];
+
+            if (c == GRAY) {
+                return true;
+            }
+            if (c == WHITE && dfs(base)) {
+                return true;
+            }
+        }
+
+        color[u] = BLACK;
+        return false;
+    };
+
+    return dfs(interfaceType);
 }
 
 }; /* namespace Visitors */

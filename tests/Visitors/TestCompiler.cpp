@@ -32,7 +32,7 @@ static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sour
     typeChecker.CheckNamespace(&scope);
 
     Scope<NameInfo> nameInfoScope;
-    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
     nameLocator.CheckNamespace(&nameInfoScope);
@@ -74,7 +74,7 @@ static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<st
 
     // Phase 3: Locate names
     Scope<NameInfo> nameInfoScope;
-    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory());
+    NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
     nameLocator.CheckNamespace(&nameInfoScope);
@@ -490,4 +490,72 @@ TEST_CASE("test struct with standalone functions compile", "[Compiler][Structure
     REQUIRE(globalVarCount == 0);
     REQUIRE(structCount == 1); // Box
     REQUIRE(funcCount == 3);   // helper + Box::doubled + Main
+}
+
+// ============================================================================
+// Interface VTable Tests
+// ============================================================================
+
+TEST_CASE("structure vtable follows interface method slot order", "[Compiler][Structure][Interface][VTable]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Arena { "
+        U"  interface Combatant { func attack(): Int; func defend(): Int; } "
+        U"  struct Knight <: Combatant { "
+        U"    func defend(): Int { 1; } "
+        U"    func attack(): Int { 2; } "
+        U"  } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    REQUIRE(program.Structures().size() == 1);
+    const flint_bytecode::StructureMeta &knight = program.Structures().at(0);
+    const std::vector<flint_bytecode::VTableEntry> &vtableEntries = knight.VTableEntries();
+
+    REQUIRE(knight.Name() == "Arena::Knight");
+    REQUIRE(vtableEntries.size() == 1);
+    REQUIRE(vtableEntries[0].InterfaceIndex() == 0);
+
+    // Main is function 0. Knight::defend and Knight::attack are functions 1 and 2,
+    // but the Combatant slots are [attack, defend].
+    REQUIRE(vtableEntries[0].MethodFunctionIndices() == std::vector<int32_t>{2, 1});
+}
+
+TEST_CASE("structure vtable includes inherited interfaces once in parent-first order",
+          "[Compiler][Structure][Interface][VTable]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Bestiary { "
+        U"  interface Entity { func id(): Int; } "
+        U"  interface Movable <: Entity { func move(): Int; } "
+        U"  interface Attackable <: Entity { func attack(): Int; } "
+        U"  interface Monster <: Movable, Attackable { func dropLoot(): Int; } "
+        U"  struct Dragon <: Monster { "
+        U"    func dropLoot(): Int { 1; } "
+        U"    func id(): Int { 2; } "
+        U"    func attack(): Int { 3; } "
+        U"    func move(): Int { 4; } "
+        U"  } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    REQUIRE(program.Structures().size() == 1);
+    const flint_bytecode::StructureMeta &dragon = program.Structures().at(0);
+    const std::vector<flint_bytecode::VTableEntry> &vtableEntries = dragon.VTableEntries();
+
+    REQUIRE(dragon.Name() == "Bestiary::Dragon");
+    REQUIRE(vtableEntries.size() == 4);
+
+    // The shared Entity interface appears once, followed by Movable, Attackable, and Monster.
+    REQUIRE(vtableEntries[0].InterfaceIndex() == 0);
+    REQUIRE(vtableEntries[1].InterfaceIndex() == 1);
+    REQUIRE(vtableEntries[2].InterfaceIndex() == 2);
+    REQUIRE(vtableEntries[3].InterfaceIndex() == 3);
+
+    // Main is function 0. Dragon methods are assigned indices in their declaration order:
+    // dropLoot=1, id=2, attack=3, move=4.
+    REQUIRE(vtableEntries[0].MethodFunctionIndices() == std::vector<int32_t>{2});
+    REQUIRE(vtableEntries[1].MethodFunctionIndices() == std::vector<int32_t>{2, 4});
+    REQUIRE(vtableEntries[2].MethodFunctionIndices() == std::vector<int32_t>{2, 3});
+    REQUIRE(vtableEntries[3].MethodFunctionIndices() == std::vector<int32_t>{2, 4, 3, 1});
 }
