@@ -82,6 +82,7 @@ TEST_CASE("test variable locating", "[Variable]")
     REQUIRE(y.value().Number() == 1);
     REQUIRE(z.value().Kind() == LocationKind::FunctionVariable);
     REQUIRE(z.value().Number() == 2);
+    REQUIRE(nameLocator.GetNameInfo(exp, LocationKind::ArgumentSlotCount).Number() == 2);
 }
 
 // ============================================================================
@@ -428,7 +429,13 @@ TEST_CASE("test method this at slot 0", "[Structure][Method]")
             parser.GetNamespaceFactory().GetRoot(), {U"M", U"Counter"})->Methods().GetItemByKey(U"get");
     REQUIRE(method != nullptr);
 
-    // FunctionVariableCount: 'this' = 1 slot (no other params or locals)
+    auto thisInfo = FindLocalVariableInfo(nameLocator, U"this");
+    REQUIRE(thisInfo.has_value());
+    REQUIRE(thisInfo.value().Number() == 0);
+
+    // The receiver is the method's only argument slot and function variable.
+    REQUIRE(nameLocator.ExistsNameInfo(method, LocationKind::ArgumentSlotCount));
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::ArgumentSlotCount).Number() == 1);
     REQUIRE(nameLocator.ExistsNameInfo(method, LocationKind::FunctionVariableCount));
     REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 1);
 }
@@ -456,7 +463,18 @@ TEST_CASE("test method params start at slot 1", "[Structure][Method]")
             parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"})->Methods().GetItemByKey(U"add");
     REQUIRE(method != nullptr);
 
-    // FunctionVariableCount: 'this' (slot 0) + x (slot 1) + y (slot 2) = 3
+    auto thisInfo = FindLocalVariableInfo(nameLocator, U"this");
+    auto x = FindLocalVariableInfo(nameLocator, U"x");
+    auto y = FindLocalVariableInfo(nameLocator, U"y");
+    REQUIRE(thisInfo.has_value());
+    REQUIRE(x.has_value());
+    REQUIRE(y.has_value());
+    REQUIRE(thisInfo.value().Number() == 0);
+    REQUIRE(x.value().Number() == 1);
+    REQUIRE(y.value().Number() == 2);
+
+    // ArgumentSlotCount and FunctionVariableCount both include the receiver and explicit parameters.
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::ArgumentSlotCount).Number() == 3);
     REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 3);
 }
 
@@ -483,7 +501,18 @@ TEST_CASE("test method with local variables", "[Structure][Method]")
             parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"})->Methods().GetItemByKey(U"compute");
     REQUIRE(method != nullptr);
 
-    // FunctionVariableCount: 'this' (slot 0) + x (slot 1) + temp (slot 2) = 3
+    auto thisInfo = FindLocalVariableInfo(nameLocator, U"this");
+    auto x = FindLocalVariableInfo(nameLocator, U"x");
+    auto temp = FindLocalVariableInfo(nameLocator, U"temp");
+    REQUIRE(thisInfo.has_value());
+    REQUIRE(x.has_value());
+    REQUIRE(temp.has_value());
+    REQUIRE(thisInfo.value().Number() == 0);
+    REQUIRE(x.value().Number() == 1);
+    REQUIRE(temp.value().Number() == 2);
+
+    // Only the receiver and x are arguments; temp is a local variable.
+    REQUIRE(nameLocator.GetNameInfo(method, LocationKind::ArgumentSlotCount).Number() == 2);
     REQUIRE(nameLocator.GetNameInfo(method, LocationKind::FunctionVariableCount).Number() == 3);
 }
 

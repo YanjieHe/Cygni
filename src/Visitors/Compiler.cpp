@@ -1311,9 +1311,10 @@ flint_bytecode::Function Compiler::CompileFunction(const std::string &name, cons
         }
     }
     int localVariableCount = nameLocator.GetNameInfo(node, LocationKind::FunctionVariableCount).Number();
-    Byte locals = static_cast<Byte>(localVariableCount - static_cast<int>(node->Parameters().size()));
+    int argumentSlotCount = nameLocator.GetNameInfo(node, LocationKind::ArgumentSlotCount).Number();
+    Byte locals = static_cast<Byte>(localVariableCount - argumentSlotCount);
     spdlog::info("Finish compiling function \"{}\".", name);
-    return flint_bytecode::Function(name, 0, locals, node->Parameters().size(), constantPool, byteCode);
+    return flint_bytecode::Function(name, 0, locals, argumentSlotCount, constantPool, byteCode);
 }
 
 flint_bytecode::NativeFunction Compiler::CompileNativeFunction(const std::string &name, const LambdaExpression *node)
@@ -1509,15 +1510,17 @@ void Compiler::CompileNamespace(std::vector<flint_bytecode::GlobalVariable> &glo
         }
         const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
 
-        std::vector<std::string> methodNames;
+        std::vector<flint_bytecode::InterfaceMethodMeta> methods;
         for (const std::u32string &methodName : interfaceType->FlattenedMethods().GetAllKeys())
         {
-            methodNames.push_back(Utility::UTF32ToUTF8(methodName));
+            const CallableType *callableType = interfaceType->FlattenedMethods().GetItemByKey(methodName);
+            methods.push_back(flint_bytecode::InterfaceMethodMeta(Utility::UTF32ToUTF8(methodName),
+                                                                  callableType->Arguments().size() + 1));
         }
         int interfaceIndex = nameLocator.GetNameInfo(interfaceDecl, LocationKind::Interface).Number();
         flint_bytecode::InterfaceMeta interfaceMeta(
             interfaceIndex, Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceDecl->QualifiedName())),
-            methodNames);
+            methods);
         interfaces.at(interfaceIndex) = interfaceMeta;
     }
 

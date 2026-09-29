@@ -18,7 +18,7 @@ enum class LocationKind
     GlobalVariable,
     FunctionVariable,
     FunctionConstant,
-    FunctionParameterCount,
+    ArgumentSlotCount,
     FunctionVariableCount,
     FunctionConstantCount,
     Function,
@@ -111,7 +111,6 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
 
 inline const std::u32string LOCAL_CONSTANT_COUNT = U"$LOCAL_CONSTANT_COUNT";
 inline const std::u32string LOCAL_VARIABLE_COUNT = U"$LOCAL_VARIABLE_COUNT";
-inline const std::u32string FUNCTION_PARAMETER_COUNT = U"$FUNCTION_PARAMETER_COUNT";
 inline const std::u32string GLOBAL_NATIVE_FUNCTION_COUNT = U"$GLOBAL_NATIVE_FUNCTION_COUNT";
 inline const std::u32string GLOBAL_FUNCTION_COUNT = U"$GLOBAL_FUNCTION_COUNT";
 inline const std::u32string GLOBAL_VARIABLE_COUNT = U"$GLOBAL_VARIABLE_COUNT";

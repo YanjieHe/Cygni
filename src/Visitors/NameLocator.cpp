@@ -118,7 +118,7 @@ void NameLocator::VisitLambda(const LambdaExpression *node, Scope<NameInfo> *par
     Scope<NameInfo> scope(parent);
     scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 0));
     scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
-    scope.Declare(FUNCTION_PARAMETER_COUNT, NameInfo(LocationKind::FunctionParameterCount, node->Parameters().size()));
+    Register(node, NameInfo(LocationKind::ArgumentSlotCount, node->Parameters().size()));
     for (const auto &parameter : node->Parameters())
     {
         scope.Declare(parameter->Name(),
@@ -293,11 +293,10 @@ void NameLocator::Register(const Expression *node, const NameInfo &nameInfo)
 void NameLocator::VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent)
 {
     Scope<NameInfo> scope(parent);
-    scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 1)); /* 1 for 'this' */
-    scope.Declare(U"this", NameInfo(LocationKind::FunctionVariable, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+    scope.Declare(U"this", NameInfo(LocationKind::FunctionVariable, 0));
+    scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 1));
     scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
-    scope.Declare(FUNCTION_PARAMETER_COUNT,
-                  NameInfo(LocationKind::FunctionParameterCount, node->Parameters().size() + 1)); /* +1 for 'this' */
+    Register(node, NameInfo(LocationKind::ArgumentSlotCount, node->Parameters().size() + 1));
 
     for (const auto &parameter : node->Parameters())
     {

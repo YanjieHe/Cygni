@@ -384,6 +384,68 @@ TEST_CASE("test multi-file compilation with three files", "[Compiler][MultiFile]
 // Structure and Method Tests
 // ============================================================================
 
+TEST_CASE("standalone function argument slots and locals are compiled separately",
+          "[Compiler][Function][FrameLayout]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Workshop { "
+        U"  func estimate(materials: Int, labor: Int): Int { "
+        U"    var total = materials + labor; total; "
+        U"  } "
+        U"  func Main(): Int { estimate(12, 8); } "
+        U"}");
+
+    const flint_bytecode::Function *estimate = nullptr;
+    for (const flint_bytecode::Function &function : program.Functions())
+    {
+        if (function.Name() == "estimate")
+        {
+            estimate = &function;
+            break;
+        }
+    }
+
+    REQUIRE(estimate != nullptr);
+    REQUIRE(estimate->ArgsSize() == 2);
+    REQUIRE(estimate->Locals() == 1);
+}
+
+TEST_CASE("structure method argument slots include the receiver", "[Compiler][Structure][Method][FrameLayout]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Workshop { "
+        U"  struct Counter { value: Int; "
+        U"    func current(): Int { this.value; } "
+        U"    func increase(amount: Int): Int { "
+        U"      var updated = this.value + amount; updated; "
+        U"    } "
+        U"  } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *current = nullptr;
+    const flint_bytecode::Function *increase = nullptr;
+    for (const flint_bytecode::Function &function : program.Functions())
+    {
+        if (function.Name() == "current")
+        {
+            current = &function;
+        }
+        else if (function.Name() == "increase")
+        {
+            increase = &function;
+        }
+    }
+
+    REQUIRE(current != nullptr);
+    REQUIRE(current->ArgsSize() == 1); // receiver
+    REQUIRE(current->Locals() == 0);
+
+    REQUIRE(increase != nullptr);
+    REQUIRE(increase->ArgsSize() == 2); // receiver + amount
+    REQUIRE(increase->Locals() == 1);   // updated
+}
+
 TEST_CASE("test struct with method compiles", "[Compiler][Structure][Method]")
 {
     flint_bytecode::ByteCodeProgram program = CompileProgram(
