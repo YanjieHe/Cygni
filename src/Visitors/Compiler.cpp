@@ -1651,11 +1651,27 @@ void Compiler::VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
             constantPool.push_back(
                 flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
         }
+        else if (type->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
+            Visit(memberAccess->GetExpression(), byteCode, constantPool);
+            for (const auto &argument : node->Arguments())
+            {
+                Visit(argument, byteCode, constantPool);
+            }
+            byteCode.AddOp(OpCode::INVOKE_INTERFACE);
+            int interfaceIndex = nameLocator.GetNameInfo(node, LocationKind::Interface).Number();
+            int methodIndex = nameLocator.GetNameInfo(node, LocationKind::InterfaceMethod).Number();
+            byteCode.AddByte(constantPool.size());
+            constantPool.push_back(flint_bytecode::Constant(
+                flint_bytecode::ConstantKind::CONSTANT_KIND_INTERFACE_METHOD_REFERENCE,
+                flint_bytecode::InterfaceMethodRef(interfaceIndex, static_cast<uint16_t>(methodIndex))));
+        }
         else
         {
             throw CompilationException(__FILE__, __LINE__,
                                        "Method call expression's function part is expected to be a member access "
-                                       "expression of a structure type.",
+                                       "expression of a structure type or an interface type.",
                                        node, nullptr);
         }
     }

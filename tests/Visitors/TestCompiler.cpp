@@ -10,6 +10,8 @@
 #include "Utility/UTF32Functions.hpp"
 #include <bit_converter/bit_converter.hpp>
 
+#include <any>
+
 using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
@@ -45,7 +47,7 @@ static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sour
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
     std::vector<flint_bytecode::InterfaceMeta> interfaces(nameInfoScope.Get(GLOBAL_INTERFACE_COUNT).Number());
     compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, interfaces,
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, interfaces,
                                             compiler.EntryPoint());
 
     return program;
@@ -88,10 +90,24 @@ static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<st
     std::vector<flint_bytecode::StructureMeta> structures(nameInfoScope.Get(GLOBAL_STRUCTURE_COUNT).Number());
     std::vector<flint_bytecode::InterfaceMeta> interfaces(nameInfoScope.Get(GLOBAL_INTERFACE_COUNT).Number());
     compiler.CompileNamespace(globalVariables, functions, nativeFunctions, structures, interfaces);
-    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, {}, interfaces,
+    flint_bytecode::ByteCodeProgram program(globalVariables, structures, functions, {}, nativeFunctions, interfaces,
                                             compiler.EntryPoint());
 
     return program;
+}
+
+static const flint_bytecode::Function *FindCompiledFunction(const flint_bytecode::ByteCodeProgram &program,
+                                                            const std::string &name)
+{
+    for (const flint_bytecode::Function &function : program.Functions())
+    {
+        if (function.Name() == name)
+        {
+            return &function;
+        }
+    }
+
+    return nullptr;
 }
 
 TEST_CASE("test compiler", "[Compiler]")
@@ -110,27 +126,24 @@ TEST_CASE("test compiler", "[Compiler]")
     // [8-11]:  functions count
     // [12-15]: nativeLibraries count
     // [16-19]: nativeFunctions count
-    // [20-23]: interfaceMethodReferences count
-    // [24-27]: interfaces count
-    // [28-31]: entryPoint
+    // [20-23]: interfaces count
+    // [24-27]: entryPoint
 
-    REQUIRE(bytes.size() >= 32); // At least the header
+    REQUIRE(bytes.size() >= 28); // At least the header
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     int32_t nativeLibCount = bit_converter::bytes_to_i32(bytes.begin() + 12, true);
     int32_t nativeFuncCount = bit_converter::bytes_to_i32(bytes.begin() + 16, true);
-    int32_t interfaceMethodRefCount = bit_converter::bytes_to_i32(bytes.begin() + 20, true);
-    int32_t interfaceCount = bit_converter::bytes_to_i32(bytes.begin() + 24, true);
-    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 28, true);
+    int32_t interfaceCount = bit_converter::bytes_to_i32(bytes.begin() + 20, true);
+    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 24, true);
 
     REQUIRE(globalVarCount == 0);         // No global variables
     REQUIRE(structCount == 0);            // No structures
     REQUIRE(funcCount == 2);              // Square and Main
     REQUIRE(nativeLibCount == 0);         // No native libraries
     REQUIRE(nativeFuncCount == 0);        // No native functions
-    REQUIRE(interfaceMethodRefCount == 0); // No interface method refs
     REQUIRE(interfaceCount == 0);         // No interfaces
     REQUIRE(entryPoint == 1);             // Main is the second function (index 1)
 }
@@ -149,10 +162,10 @@ TEST_CASE("test conditional expression compilation", "[Compiler][Conditional]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
-    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 28, true);
+    int32_t entryPoint = bit_converter::bytes_to_i32(bytes.begin() + 24, true);
 
     REQUIRE(funcCount == 2);
     REQUIRE(entryPoint == 1);
@@ -169,7 +182,7 @@ TEST_CASE("test nested conditional compilation", "[Compiler][Conditional]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -190,7 +203,7 @@ TEST_CASE("test while loop compilation", "[Compiler][WhileLoop]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -207,7 +220,7 @@ TEST_CASE("test nested while loop compilation", "[Compiler][WhileLoop]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -227,7 +240,7 @@ TEST_CASE("test local variable declaration and usage", "[Compiler][Variable]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -243,7 +256,7 @@ TEST_CASE("test variable reassignment", "[Compiler][Variable]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 2);
@@ -263,7 +276,7 @@ TEST_CASE("test global variable compilation", "[Compiler][Variable][Global]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -282,7 +295,7 @@ TEST_CASE("test global variable assignment", "[Compiler][Variable][Global]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     REQUIRE(globalVarCount == 1);
@@ -312,7 +325,7 @@ TEST_CASE("test multi-file compilation with cross-module call", "[Compiler][Mult
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
@@ -342,7 +355,7 @@ TEST_CASE("test multi-file compilation with shared global variable", "[Compiler]
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -374,7 +387,7 @@ TEST_CASE("test multi-file compilation with three files", "[Compiler][MultiFile]
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
     REQUIRE(funcCount == 3); // Add, Sum3, Main
@@ -457,7 +470,7 @@ TEST_CASE("test struct with method compiles", "[Compiler][Structure][Method]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -479,7 +492,7 @@ TEST_CASE("test struct with multiple methods compiles", "[Compiler][Structure][M
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -499,7 +512,7 @@ TEST_CASE("test struct method with params compiles", "[Compiler][Structure][Meth
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -521,7 +534,7 @@ TEST_CASE("test multiple structs compile", "[Compiler][Structure][Method]")
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
     int32_t funcCount = bit_converter::bytes_to_i32(bytes.begin() + 8, true);
@@ -543,7 +556,7 @@ TEST_CASE("test struct with standalone functions compile", "[Compiler][Structure
     program.Compile(byteCode);
     const std::vector<flint_bytecode::Byte> &bytes = byteCode.GetBytes();
 
-    REQUIRE(bytes.size() >= 32);
+    REQUIRE(bytes.size() >= 28);
 
     int32_t globalVarCount = bit_converter::bytes_to_i32(bytes.begin() + 0, true);
     int32_t structCount = bit_converter::bytes_to_i32(bytes.begin() + 4, true);
@@ -620,4 +633,86 @@ TEST_CASE("structure vtable includes inherited interfaces once in parent-first o
     REQUIRE(vtableEntries[1].MethodFunctionIndices() == std::vector<int32_t>{2, 4});
     REQUIRE(vtableEntries[2].MethodFunctionIndices() == std::vector<int32_t>{2, 3});
     REQUIRE(vtableEntries[3].MethodFunctionIndices() == std::vector<int32_t>{2, 4, 3, 1});
+}
+
+// ============================================================================
+// Interface Method Call Tests
+// ============================================================================
+
+TEST_CASE("interface method call emits receiver arguments and method reference",
+          "[Compiler][Interface][Method][Call]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Sanctuary { "
+        U"  interface Healer { func heal(amount: Int): Int; } "
+        U"  struct Priest <: Healer { func heal(amount: Int): Int { amount; } } "
+        U"  func restore(healer: Healer): Int { healer.heal(1); } "
+        U"  func Main(): Int { var priest = new Priest { }; restore(priest); } "
+        U"}");
+
+    const flint_bytecode::Function *restore = FindCompiledFunction(program, "restore");
+    REQUIRE(restore != nullptr);
+    REQUIRE(restore->ConstantPool().size() == 1);
+
+    const flint_bytecode::Constant &constant = restore->ConstantPool().front();
+    REQUIRE(constant.GetConstantKind() ==
+            flint_bytecode::ConstantKind::CONSTANT_KIND_INTERFACE_METHOD_REFERENCE);
+    const flint_bytecode::InterfaceMethodRef &reference =
+        std::any_cast<const flint_bytecode::InterfaceMethodRef &>(constant.GetValue());
+    REQUIRE(reference.InterfaceIndex() == 0);
+    REQUIRE(reference.MethodIndex() == 0);
+
+    const std::vector<flint_bytecode::Byte> &code = restore->Code().GetBytes();
+    REQUIRE(code.size() >= 5);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0); // receiver slot
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_I32_1));
+    REQUIRE(code[3] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::INVOKE_INTERFACE));
+    REQUIRE(code[4] == 0); // interface method reference constant
+}
+
+TEST_CASE("interface method call uses flattened method slot order", "[Compiler][Interface][Method][Call]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module Arena { "
+        U"  interface Combatant { func attack(): Int; func defend(): Int; } "
+        U"  func guard(combatant: Combatant): Int { combatant.defend(); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *guard = FindCompiledFunction(program, "guard");
+    REQUIRE(guard != nullptr);
+    REQUIRE(guard->ConstantPool().size() == 1);
+
+    const flint_bytecode::Constant &constant = guard->ConstantPool().front();
+    REQUIRE(constant.GetConstantKind() ==
+            flint_bytecode::ConstantKind::CONSTANT_KIND_INTERFACE_METHOD_REFERENCE);
+    const flint_bytecode::InterfaceMethodRef &reference =
+        std::any_cast<const flint_bytecode::InterfaceMethodRef &>(constant.GetValue());
+    REQUIRE(reference.InterfaceIndex() == 0);
+    REQUIRE(reference.MethodIndex() == 1); // defend follows attack
+}
+
+TEST_CASE("inherited interface method call uses derived interface flattened slot",
+          "[Compiler][Interface][Inheritance][Method][Call]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module World { "
+        U"  interface Entity { func id(): Int; } "
+        U"  interface Character <: Entity { func level(): Int; } "
+        U"  func inspect(character: Character): Int { character.id(); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *inspect = FindCompiledFunction(program, "inspect");
+    REQUIRE(inspect != nullptr);
+    REQUIRE(inspect->ConstantPool().size() == 1);
+
+    const flint_bytecode::Constant &constant = inspect->ConstantPool().front();
+    REQUIRE(constant.GetConstantKind() ==
+            flint_bytecode::ConstantKind::CONSTANT_KIND_INTERFACE_METHOD_REFERENCE);
+    const flint_bytecode::InterfaceMethodRef &reference =
+        std::any_cast<const flint_bytecode::InterfaceMethodRef &>(constant.GetValue());
+    REQUIRE(reference.InterfaceIndex() == 1); // Character
+    REQUIRE(reference.MethodIndex() == 0);    // inherited Entity::id
 }
