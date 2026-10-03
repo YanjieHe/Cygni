@@ -37,7 +37,8 @@ static flint_bytecode::ByteCodeProgram CompileProgram(const std::u32string &sour
     NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
-    nameLocator.CheckNamespace(&nameInfoScope);
+    Scope<NameInfo> nameResolutionScope;
+    nameLocator.CheckNamespace(&nameResolutionScope);
 
     Compiler compiler(typeChecker, nameLocator, compilationContext.GetNamespaceFactory());
     std::vector<flint_bytecode::GlobalVariable> globalVariables(nameInfoScope.Get(GLOBAL_VARIABLE_COUNT).Number());
@@ -79,7 +80,8 @@ static flint_bytecode::ByteCodeProgram CompileMultipleFiles(const std::vector<st
     NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
-    nameLocator.CheckNamespace(&nameInfoScope);
+    Scope<NameInfo> nameResolutionScope;
+    nameLocator.CheckNamespace(&nameResolutionScope);
 
     // Phase 4: Compile
     Compiler compiler(typeChecker, nameLocator, compilationContext.GetNamespaceFactory());
@@ -565,6 +567,93 @@ TEST_CASE("test struct with standalone functions compile", "[Compiler][Structure
     REQUIRE(globalVarCount == 0);
     REQUIRE(structCount == 1); // Box
     REQUIRE(funcCount == 3);   // helper + Box::doubled + Main
+}
+
+// ============================================================================
+// Interface Field Tests
+// ============================================================================
+
+TEST_CASE("interface field initializer emits object field store",
+          "[Compiler][Structure][Interface][Field]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module LinkedList { "
+        U"  interface IntList { func sum(): Int; } "
+        U"  struct EmptyList <: IntList { func sum(): Int { 0; } } "
+        U"  struct ListNode { next: IntList; } "
+        U"  func makeList(end: EmptyList): ListNode { new ListNode { next = end; }; } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *makeList = FindCompiledFunction(program, "makeList");
+    REQUIRE(makeList != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = makeList->Code().GetBytes();
+    REQUIRE(code.size() >= 8);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::NEW));
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::DUPLICATE));
+    REQUIRE(code[3] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[4] == 0); // end parameter
+    REQUIRE(code[5] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::POP_FIELD_OBJECT));
+    REQUIRE(code[6] == 0); // ListNode::next
+}
+
+TEST_CASE("interface field method call loads the field and invokes the interface",
+          "[Compiler][Structure][Interface][Field][Call]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module LinkedList { "
+        U"  interface IntList { func sum(): Int; } "
+        U"  struct ListNode { next: IntList; } "
+        U"  func total(list: ListNode): Int { list.next.sum(); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *total = FindCompiledFunction(program, "total");
+    REQUIRE(total != nullptr);
+    REQUIRE(total->ConstantPool().size() == 1);
+
+    const flint_bytecode::Constant &constant = total->ConstantPool().front();
+    REQUIRE(constant.GetConstantKind() ==
+            flint_bytecode::ConstantKind::CONSTANT_KIND_INTERFACE_METHOD_REFERENCE);
+    const flint_bytecode::InterfaceMethodRef &reference =
+        std::any_cast<const flint_bytecode::InterfaceMethodRef &>(constant.GetValue());
+    REQUIRE(reference.InterfaceIndex() == 0);
+    REQUIRE(reference.MethodIndex() == 0);
+
+    const std::vector<flint_bytecode::Byte> &code = total->Code().GetBytes();
+    REQUIRE(code.size() >= 7);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0); // list parameter
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_FIELD_OBJECT));
+    REQUIRE(code[3] == 0); // ListNode::next
+    REQUIRE(code[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::INVOKE_INTERFACE));
+    REQUIRE(code[5] == 0); // interface method reference constant
+}
+
+TEST_CASE("assignment to an interface field emits object field store",
+          "[Compiler][Structure][Interface][Field][Assignment]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module LinkedList { "
+        U"  interface IntList { func sum(): Int; } "
+        U"  struct EmptyList <: IntList { func sum(): Int { 0; } } "
+        U"  struct ListNode { next: IntList; } "
+        U"  func replace(list: ListNode, next: EmptyList): Int { list.next = next; 0; } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *replace = FindCompiledFunction(program, "replace");
+    REQUIRE(replace != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = replace->Code().GetBytes();
+    REQUIRE(code.size() >= 7);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0); // list parameter
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[3] == 1); // next parameter
+    REQUIRE(code[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::POP_FIELD_OBJECT));
+    REQUIRE(code[5] == 0); // ListNode::next
 }
 
 // ============================================================================

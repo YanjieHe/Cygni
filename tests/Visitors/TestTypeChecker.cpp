@@ -105,6 +105,78 @@ TEST_CASE("test function declaration", "[Function]")
 }
 
 // ============================================================================
+// Namespace Visibility Tests
+// ============================================================================
+
+TEST_CASE("adventurers guild can call its own reward function without qualification", "[Namespace][Function]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module AdventurersGuild { "
+                                                     U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                     U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("adventurers guild cannot call a sibling treasury function without qualification",
+          "[Namespace][Function][Error]")
+{
+    SECTION("treasury is declared before the guild")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"module RoyalTreasury { "
+                                                         U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                         U"} "
+                                                         U"module AdventurersGuild { "
+                                                         U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                         U"}");
+        parser.ParseNamespace();
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+        Scope<const Type *> scope;
+        REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                            Catch::Matchers::Contains("'CalculateQuestReward' is not defined"));
+    }
+
+    SECTION("guild is declared before the treasury")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"module AdventurersGuild { "
+                                                         U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                         U"} "
+                                                         U"module RoyalTreasury { "
+                                                         U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                         U"}");
+        parser.ParseNamespace();
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+        Scope<const Type *> scope;
+        REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                            Catch::Matchers::Contains("'CalculateQuestReward' is not defined"));
+    }
+}
+
+TEST_CASE("adventurers guild can call a sibling treasury function with a qualified name", "[Namespace][Function]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module RoyalTreasury { "
+                                                     U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                     U"} "
+                                                     U"module AdventurersGuild { "
+                                                     U"  func Main(): Int { RoyalTreasury::CalculateQuestReward(5); } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+// ============================================================================
 // Arithmetic Operations Tests
 // ============================================================================
 
@@ -142,6 +214,30 @@ TEST_CASE("test multiplication of integers", "[Arithmetic]")
     Scope<const Type *> scope;
     const Type *type = typeChecker.Visit(exp, &scope);
     REQUIRE(type->GetTypeCode() == TypeCode::Int32);
+}
+
+TEST_CASE("type check modulo of integers", "[Arithmetic][Modulo]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"10 % 3");
+    auto exp = parser.ParseOr();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    const Type *type = typeChecker.Visit(exp, &scope);
+    REQUIRE(type->GetTypeCode() == TypeCode::Int32);
+}
+
+TEST_CASE("type check modulo rejects non-matching integer operands", "[Arithmetic][Modulo][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"10 % 3.14");
+    auto exp = parser.ParseOr();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.Visit(exp, &scope),
+                        Catch::Matchers::Contains("Modulo operation requires operands of the same integer type"));
 }
 
 TEST_CASE("test arithmetic with doubles", "[Arithmetic]")
@@ -775,6 +871,59 @@ TEST_CASE("type check assign struct to interface and call method", "[Interface]"
 
     Scope<const Type *> scope;
     REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check structure subtype in interface field initializer", "[Interface][Structure][New]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface IntList { func sum(): Int; } "
+                                         U"struct EmptyList <: IntList { "
+                                         U"  func sum(): Int { 0; } "
+                                         U"} "
+                                         U"struct ListNode { next: IntList; } "
+                                         U"func Main(): Int { "
+                                         U"  var end = new EmptyList { }; "
+                                         U"  var list = new ListNode { next = end; }; "
+                                         U"  list.next.sum(); "
+                                         U"} } ");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check structure subtype in explicitly typed global interface variable",
+          "[Interface][GlobalVariable]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface IntList { func sum(): Int; } "
+                                         U"struct EmptyList <: IntList { "
+                                         U"  func sum(): Int { 0; } "
+                                         U"} "
+                                         U"var Empty: IntList = new EmptyList { }; "
+                                         U"func Main(): Int { Empty.sum(); } "
+                                         U"} ");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    VariableDeclarationExpression *empty = parser.GetNamespaceFactory().SearchGlobalVariable(
+        parser.GetNamespaceFactory().GetRoot(), {U"M", U"Empty"});
+    LambdaExpression *main = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"M", U"Main"});
+    BlockExpression *body = static_cast<BlockExpression *>(main->Body());
+    CallExpression *call = static_cast<CallExpression *>(body->Expressions().front());
+    MemberExpression *member = static_cast<MemberExpression *>(call->Function());
+
+    REQUIRE(typeChecker.GetType(empty)->GetTypeCode() == TypeCode::Interface);
+    REQUIRE(typeChecker.GetType(member->GetExpression())->GetTypeCode() == TypeCode::Interface);
 }
 
 TEST_CASE("type check pass struct to interface parameter", "[Interface]")

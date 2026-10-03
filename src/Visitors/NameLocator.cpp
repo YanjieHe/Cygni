@@ -32,20 +32,30 @@ void NameLocator::VisitParameter(const ParameterExpression *node, Scope<NameInfo
 {
     if (node->QualifiedName().size() == 1)
     {
-        NameInfo nameInfo = scope->Get(node->Name());
-        Register(node, nameInfo);
+        if (scope->Exists(node->Name()))
+        {
+            NameInfo nameInfo = scope->Get(node->Name());
+            Register(node, nameInfo);
+        }
+        else
+        {
+            spdlog::error("'{}' is not defined.", Utility::UTF32ToUTF8(node->Name()));
+
+            throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' is not defined."),
+                                node, nullptr);
+        }
     }
     else
     {
         VariableDeclarationExpression *varDecl =
-            namespaceFactory.SearchGlobalVariable(namespaceFactory.GetRoot(), node->QualifiedName());
+            namespaceFactory.SearchGlobalVariable(namespaceStack.top(), node->QualifiedName());
         if (varDecl != nullptr)
         {
             const NameInfo &nameInfo = GetNameInfo(varDecl, LocationKind::GlobalVariable);
 
             return Register(node, nameInfo);
         }
-        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(namespaceFactory.GetRoot(), node->QualifiedName());
+        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(namespaceStack.top(), node->QualifiedName());
         if (funcDecl != nullptr)
         {
             if (ExistsNameInfo(funcDecl, LocationKind::Function))
@@ -141,34 +151,55 @@ void NameLocator::VisitDefault(const DefaultExpression *node, Scope<NameInfo> *s
 }
 void NameLocator::VisitVariableDeclaration(const VariableDeclarationExpression *node, Scope<NameInfo> *scope)
 {
+    Visit(node->Initializer(), scope);
+
     NameInfo nameInfo(LocationKind::FunctionVariable, scope->Get(LOCAL_VARIABLE_COUNT).Number());
     scope->Declare(node->Name(), nameInfo);
     Register(node, nameInfo);
     scope->Get(LOCAL_VARIABLE_COUNT).Number()++;
-    Visit(node->Initializer(), scope);
 }
 void NameLocator::CheckNamespace(Scope<NameInfo> *parent)
 {
     Namespace *top = namespaceStack.top();
-    Scope<NameInfo> *scope(parent);
+    Scope<NameInfo> scope(parent);
+
+    for (VariableDeclarationExpression *varDecl : top->GlobalVariables().GetAllItems())
+    {
+        const NameInfo &nameInfo = GetNameInfo(varDecl, LocationKind::GlobalVariable);
+
+        scope.Declare(varDecl->Name(), nameInfo);
+    }
+
+    for (LambdaExpression *funcDecl : top->Functions().GetAllItems())
+    {
+        LocationKind kind = funcDecl->IsNativeFunction() ? LocationKind::NativeFunction : LocationKind::Function;
+        const NameInfo &nameInfo = GetNameInfo(funcDecl, kind);
+        scope.Declare(funcDecl->Name(), nameInfo);
+    }
 
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
-        VisitLambda(funcDecl, scope);
+        VisitLambda(funcDecl, &scope);
     }
 
     for (const auto &structDecl : top->Structures().GetAllItems())
     {
+        Scope<NameInfo> structureScope(&scope);
         for (const auto &method : structDecl->Methods().GetAllItems())
         {
-            VisitMethod(method, scope);
+            const NameInfo &nameInfo = GetNameInfo(method, LocationKind::Function);
+            structureScope.Declare(method->Name(), nameInfo);
+        }
+        for (const auto &method : structDecl->Methods().GetAllItems())
+        {
+            VisitMethod(method, &structureScope);
         }
     }
 
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
-        CheckNamespace(scope);
+        CheckNamespace(&scope);
         namespaceStack.pop();
     }
 }

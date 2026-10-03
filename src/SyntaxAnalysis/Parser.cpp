@@ -46,7 +46,7 @@ const Token &Parser::Match(TokenTag tag)
 
         throw ParserException(
             __FILE__, __LINE__,
-            SourceRange(document, Look().line, Look().column, Look().line, Look().column + Look().text.size()),
+            SourceRange(document, Look().line, Look().line, Look().column, Look().column + Look().text.size()),
             "Expecting '" + Utility::EnumToString(tag) + "', got '" + Utility::EnumToString(Look().tag) + "'.",
             nullptr);
     }
@@ -210,7 +210,7 @@ ExpPtr Parser::ParseTerm()
 {
     const Token &start = Look();
     auto x = ParseUnary();
-    while (Look().tag == TokenTag::Multiply || Look().tag == TokenTag::Divide)
+    while (Look().tag == TokenTag::Multiply || Look().tag == TokenTag::Divide || Look().tag == TokenTag::Modulo)
     {
         Token t = Look();
         Advance();
@@ -219,9 +219,13 @@ ExpPtr Parser::ParseTerm()
         {
             x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Multiply, x, y);
         }
-        else
+        else if (t.tag == TokenTag::Divide)
         {
             x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Divide, x, y);
+        }
+        else
+        {
+            x = GetExpressionFactory().Create<BinaryExpression>(Pos(start), ExpressionType::Modulo, x, y);
         }
     }
     return x;
@@ -498,7 +502,7 @@ bool Parser::RequiresDeclaration(FunctionParseKind kind, bool isNative, std::str
 }
 
 Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::vector<Annotation> &annotations,
-                                                                   FunctionParseKind kind)
+                                                                    FunctionParseKind kind)
 {
     const Token &start = Look();
     Match(TokenTag::Func);
@@ -552,8 +556,7 @@ Expressions::LambdaExpression *Parser::FunctionDeclarationStatement(const std::v
         body = ParseBlock();
     }
 
-    return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType,
-                                                           annotations);
+    return GetExpressionFactory().Create<LambdaExpression>(Pos(start), name, body, parameters, returnType, annotations);
 }
 
 Expressions::VariableDeclarationExpression *Parser::ParseGlobalVariable()

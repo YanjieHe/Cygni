@@ -270,7 +270,8 @@ TEST_CASE("test CheckNamespace processes function body", "[Namespace]")
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     LambdaExpression *funcDecl =
         parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Square"});
@@ -421,7 +422,8 @@ TEST_CASE("test method this at slot 0", "[Structure][Method]")
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     // After CheckNamespace, the method's variable count should include 'this'
     LambdaExpression *method =
@@ -456,7 +458,8 @@ TEST_CASE("test method params start at slot 1", "[Structure][Method]")
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     LambdaExpression *method =
         parser.GetNamespaceFactory().SearchStructure(
@@ -494,7 +497,8 @@ TEST_CASE("test method with local variables", "[Structure][Method]")
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     LambdaExpression *method =
         parser.GetNamespaceFactory().SearchStructure(
@@ -565,7 +569,8 @@ TEST_CASE("locate structure method call as a statically known function", "[Struc
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"restore"});
     const MemberExpression *member = static_cast<const MemberExpression *>(call->Function());
@@ -608,7 +613,8 @@ TEST_CASE("locate interface method call with interface and method indices", "[In
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"fight"});
     InterfaceExpression *combatant =
@@ -643,7 +649,8 @@ TEST_CASE("locate inherited interface method using flattened method order", "[In
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     CallExpression *call = GetOnlyCallInFunction(parser, {U"M", U"react"});
     InterfaceExpression *player =
@@ -678,7 +685,8 @@ TEST_CASE("same method slot in different interfaces uses different interface ind
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     CallExpression *combatCall = GetOnlyCallInFunction(parser, {U"M", U"combatLevel"});
     CallExpression *questCall = GetOnlyCallInFunction(parser, {U"M", U"questLevel"});
@@ -708,7 +716,8 @@ TEST_CASE("locate function call nested inside a method receiver", "[Structure][M
     NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameScope);
     nameLocator.RegisterAllInfo(&nameScope);
-    nameLocator.CheckNamespace(&nameScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
 
     CallExpression *methodCall = GetOnlyCallInFunction(parser, {U"M", U"prepare"});
     const MemberExpression *member = static_cast<const MemberExpression *>(methodCall->Function());
@@ -720,4 +729,414 @@ TEST_CASE("locate function call nested inside a method receiver", "[Structure][M
     REQUIRE(nameLocator.GetNameInfo(receiverCall->Function(), LocationKind::Function).Number() ==
             nameLocator.GetNameInfo(createWarrior, LocationKind::Function).Number());
     REQUIRE(nameLocator.ExistsNameInfo(methodCall, LocationKind::Function));
+}
+
+// ============================================================================
+// Namespace Visibility Tests
+// ============================================================================
+
+TEST_CASE("locate an unqualified function call in the same namespace", "[Namespace][Function][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module AdventurersGuild { "
+                                 U"  func CalculateReward(rank: Int): Int { rank * 100; } "
+                                 U"  func CompleteQuest(): Int { CalculateReward(5); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    CallExpression *call =
+        GetOnlyCallInFunction(parser, {U"AdventurersGuild", U"CompleteQuest"});
+    LambdaExpression *calculateReward = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"AdventurersGuild", U"CalculateReward"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(call->Function(), LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(call->Function(), LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(calculateReward, LocationKind::Function).Number());
+}
+
+TEST_CASE("an unqualified function call cannot cross sibling namespaces",
+          "[Namespace][Function][Call][Error]")
+{
+    SECTION("provider namespace is declared first")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext,
+                                     U"module RoyalTreasury { "
+                                     U"  func CalculateReward(rank: Int): Int { rank * 100; } "
+                                     U"} "
+                                     U"module AdventurersGuild { "
+                                     U"  func CompleteQuest(): Int { CalculateReward(5); } "
+                                     U"}");
+        parser.ParseNamespace();
+
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+        Scope<NameInfo> indexingScope;
+        NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+        nameLocator.InitializeSymbolCounters(&indexingScope);
+        nameLocator.RegisterAllInfo(&indexingScope);
+        Scope<NameInfo> resolutionScope;
+
+        REQUIRE_THROWS_WITH(nameLocator.CheckNamespace(&resolutionScope),
+                            Catch::Matchers::Contains("'CalculateReward' is not defined"));
+    }
+
+    SECTION("consumer namespace is declared first")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext,
+                                     U"module AdventurersGuild { "
+                                     U"  func CompleteQuest(): Int { CalculateReward(5); } "
+                                     U"} "
+                                     U"module RoyalTreasury { "
+                                     U"  func CalculateReward(rank: Int): Int { rank * 100; } "
+                                     U"}");
+        parser.ParseNamespace();
+
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+        Scope<NameInfo> indexingScope;
+        NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+        nameLocator.InitializeSymbolCounters(&indexingScope);
+        nameLocator.RegisterAllInfo(&indexingScope);
+        Scope<NameInfo> resolutionScope;
+
+        REQUIRE_THROWS_WITH(nameLocator.CheckNamespace(&resolutionScope),
+                            Catch::Matchers::Contains("'CalculateReward' is not defined"));
+    }
+}
+
+TEST_CASE("locate a qualified function call across sibling namespaces", "[Namespace][Function][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module RoyalTreasury { "
+                                 U"  func CalculateReward(rank: Int): Int { rank * 100; } "
+                                 U"} "
+                                 U"module AdventurersGuild { "
+                                 U"  func CompleteQuest(): Int { RoyalTreasury::CalculateReward(5); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    CallExpression *call =
+        GetOnlyCallInFunction(parser, {U"AdventurersGuild", U"CompleteQuest"});
+    LambdaExpression *calculateReward = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"RoyalTreasury", U"CalculateReward"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(call->Function(), LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(call->Function(), LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(calculateReward, LocationKind::Function).Number());
+}
+
+TEST_CASE("locate a qualified global variable across sibling namespaces",
+          "[Namespace][GlobalVariable]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module TavernSettings { var ClosingHour: Int = 0; } "
+                                 U"module Tavern { "
+                                 U"  func GetClosingHour(): Int { TavernSettings::ClosingHour; } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    LambdaExpression *getClosingHour = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"Tavern", U"GetClosingHour"});
+    BlockExpression *body = static_cast<BlockExpression *>(getClosingHour->Body());
+    Expression *closingHourReference = body->Expressions().front();
+    VariableDeclarationExpression *closingHour = parser.GetNamespaceFactory().SearchGlobalVariable(
+        parser.GetNamespaceFactory().GetRoot(), {U"TavernSettings", U"ClosingHour"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(closingHourReference, LocationKind::GlobalVariable));
+    REQUIRE(nameLocator.GetNameInfo(closingHourReference, LocationKind::GlobalVariable).Number() ==
+            nameLocator.GetNameInfo(closingHour, LocationKind::GlobalVariable).Number());
+}
+
+TEST_CASE("locate a relatively qualified global variable in a nested namespace",
+          "[Namespace][GlobalVariable][Nested]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Kingdom { "
+                                 U"  module TavernSettings { var ClosingHour: Int = 0; } "
+                                 U"  module Tavern { "
+                                 U"    func GetClosingHour(): Int { TavernSettings::ClosingHour; } "
+                                 U"  } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    LambdaExpression *getClosingHour = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"Kingdom", U"Tavern", U"GetClosingHour"});
+    BlockExpression *body = static_cast<BlockExpression *>(getClosingHour->Body());
+    Expression *closingHourReference = body->Expressions().front();
+    VariableDeclarationExpression *closingHour = parser.GetNamespaceFactory().SearchGlobalVariable(
+        parser.GetNamespaceFactory().GetRoot(), {U"Kingdom", U"TavernSettings", U"ClosingHour"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(closingHourReference, LocationKind::GlobalVariable));
+    REQUIRE(nameLocator.GetNameInfo(closingHourReference, LocationKind::GlobalVariable).Number() ==
+            nameLocator.GetNameInfo(closingHour, LocationKind::GlobalVariable).Number());
+}
+
+TEST_CASE("locate a qualified native function across sibling namespaces",
+          "[Namespace][NativeFunction][Call]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module IO { "
+                                 U"  @External(Library=\"io\", EntryPoint=\"put_int_line\") "
+                                 U"  func PutIntLine(value: Int): Void; "
+                                 U"} "
+                                 U"module Tavern { "
+                                 U"  func Announce(value: Int): Void { IO::PutIntLine(value); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    CallExpression *call = GetOnlyCallInFunction(parser, {U"Tavern", U"Announce"});
+    LambdaExpression *putIntLine = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"IO", U"PutIntLine"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(call->Function(), LocationKind::NativeFunction));
+    REQUIRE(nameLocator.GetNameInfo(call->Function(), LocationKind::NativeFunction).Number() ==
+            nameLocator.GetNameInfo(putIntLine, LocationKind::NativeFunction).Number());
+}
+
+// ============================================================================
+// Structure Method Visibility Tests
+// ============================================================================
+
+TEST_CASE("a structure method can call another method without qualification",
+          "[Structure][Method][Call][Scope]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Sanctuary { "
+                                 U"  struct HealingFountain { "
+                                 U"    func Restore(amount: Int): Int { amount; } "
+                                 U"    func Use(): Int { Restore(50); } "
+                                 U"  } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    StructureExpression *fountain = parser.GetNamespaceFactory().SearchStructure(
+        parser.GetNamespaceFactory().GetRoot(), {U"Sanctuary", U"HealingFountain"});
+    LambdaExpression *restore = fountain->Methods().GetItemByKey(U"Restore");
+    LambdaExpression *use = fountain->Methods().GetItemByKey(U"Use");
+    BlockExpression *useBody = static_cast<BlockExpression *>(use->Body());
+    CallExpression *restoreCall = static_cast<CallExpression *>(useBody->Expressions().front());
+
+    REQUIRE(nameLocator.ExistsNameInfo(restoreCall->Function(), LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(restoreCall->Function(), LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(restore, LocationKind::Function).Number());
+}
+
+TEST_CASE("a structure method is not visible to module functions without a receiver",
+          "[Structure][Method][Call][Scope][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Sanctuary { "
+                                 U"  struct HealingFountain { "
+                                 U"    func Restore(): Int { 50; } "
+                                 U"  } "
+                                 U"  func StealHealing(): Int { Restore(); } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+
+    REQUIRE_THROWS_WITH(nameLocator.CheckNamespace(&resolutionScope),
+                        Catch::Matchers::Contains("'Restore' is not defined"));
+}
+
+// ============================================================================
+// Additional Resolution Tests
+// ============================================================================
+
+TEST_CASE("a local variable becomes visible after its initializer",
+          "[Variable][Shadowing][Initializer]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Treasury { "
+                                 U"  var Gold: Int = 100; "
+                                 U"  func CalculateReward(): Int { "
+                                 U"    var Gold = Gold + 50; "
+                                 U"    Gold; "
+                                 U"  } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    LambdaExpression *calculateReward = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"Treasury", U"CalculateReward"});
+    BlockExpression *body = static_cast<BlockExpression *>(calculateReward->Body());
+    VariableDeclarationExpression *localGold =
+        static_cast<VariableDeclarationExpression *>(body->Expressions().at(0));
+    BinaryExpression *initializer = static_cast<BinaryExpression *>(localGold->Initializer());
+    Expression *initializerGoldReference = initializer->Left();
+    Expression *localGoldReference = body->Expressions().at(1);
+    VariableDeclarationExpression *globalGold = parser.GetNamespaceFactory().SearchGlobalVariable(
+        parser.GetNamespaceFactory().GetRoot(), {U"Treasury", U"Gold"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(initializerGoldReference, LocationKind::GlobalVariable));
+    REQUIRE(nameLocator.GetNameInfo(initializerGoldReference, LocationKind::GlobalVariable).Number() ==
+            nameLocator.GetNameInfo(globalGold, LocationKind::GlobalVariable).Number());
+    REQUIRE_FALSE(nameLocator.ExistsNameInfo(initializerGoldReference, LocationKind::FunctionVariable));
+
+    REQUIRE(nameLocator.ExistsNameInfo(localGoldReference, LocationKind::FunctionVariable));
+    REQUIRE(nameLocator.GetNameInfo(localGoldReference, LocationKind::FunctionVariable).Number() ==
+            nameLocator.GetNameInfo(localGold, LocationKind::FunctionVariable).Number());
+}
+
+TEST_CASE("locate a relatively qualified function in a nested namespace",
+          "[Namespace][Function][Call][Nested]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Kingdom { "
+                                 U"  module Kitchen { "
+                                 U"    func GetMealPrice(): Int { 20; } "
+                                 U"  } "
+                                 U"  module Tavern { "
+                                 U"    func GetBill(): Int { Kitchen::GetMealPrice(); } "
+                                 U"  } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    CallExpression *call =
+        GetOnlyCallInFunction(parser, {U"Kingdom", U"Tavern", U"GetBill"});
+    LambdaExpression *getMealPrice = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"Kingdom", U"Kitchen", U"GetMealPrice"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(call->Function(), LocationKind::Function));
+    REQUIRE(nameLocator.GetNameInfo(call->Function(), LocationKind::Function).Number() ==
+            nameLocator.GetNameInfo(getMealPrice, LocationKind::Function).Number());
+}
+
+TEST_CASE("locate a structure and its field constants in a new expression",
+          "[Structure][New][Constant]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module Kitchen { "
+                                 U"  struct Meal { price: Int; } "
+                                 U"  func Prepare(): Meal { new Meal { price = 20; }; } "
+                                 U"}");
+    parser.ParseNamespace();
+
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+    Scope<const Type *> typeScope;
+    typeChecker.CheckNamespace(&typeScope);
+
+    Scope<NameInfo> indexingScope;
+    NameLocator nameLocator(parser.GetNamespaceFactory(), typeChecker);
+    nameLocator.InitializeSymbolCounters(&indexingScope);
+    nameLocator.RegisterAllInfo(&indexingScope);
+    Scope<NameInfo> resolutionScope;
+    nameLocator.CheckNamespace(&resolutionScope);
+
+    LambdaExpression *prepare = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"Kitchen", U"Prepare"});
+    BlockExpression *body = static_cast<BlockExpression *>(prepare->Body());
+    NewExpression *newMeal = static_cast<NewExpression *>(body->Expressions().front());
+    Expression *price = newMeal->FieldsInitialization().GetItemByKey(U"price");
+    StructureExpression *meal = parser.GetNamespaceFactory().SearchStructure(
+        parser.GetNamespaceFactory().GetRoot(), {U"Kitchen", U"Meal"});
+
+    REQUIRE(nameLocator.ExistsNameInfo(newMeal, LocationKind::Structure));
+    REQUIRE(nameLocator.GetNameInfo(newMeal, LocationKind::Structure).Number() ==
+            nameLocator.GetNameInfo(meal, LocationKind::Structure).Number());
+    REQUIRE(nameLocator.ExistsNameInfo(price, LocationKind::FunctionConstant));
+    REQUIRE(nameLocator.GetNameInfo(price, LocationKind::FunctionConstant).Number() == 0);
+    REQUIRE(nameLocator.GetNameInfo(prepare, LocationKind::FunctionConstantCount).Number() == 1);
 }

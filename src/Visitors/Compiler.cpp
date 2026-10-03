@@ -946,7 +946,8 @@ void Compiler::VisitNew(const NewExpression *node, ByteCode &byteCode,
             break;
         }
         case TypeCode::String:
-        case TypeCode::Structure: {
+        case TypeCode::Structure:
+        case TypeCode::Interface: {
             byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
             byteCode.AddByte(static_cast<Byte>(index));
             break;
@@ -997,7 +998,8 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
                 break;
             }
             case TypeCode::String:
-            case TypeCode::Structure: {
+            case TypeCode::Structure:
+            case TypeCode::Interface: {
                 byteCode.AddOp(OpCode::PUSH_FIELD_OBJECT);
                 byteCode.AddByte(static_cast<Byte>(index));
                 break;
@@ -1061,7 +1063,8 @@ void Compiler::CompileAssignment(const BinaryExpression *node, ByteCode &byteCod
             case TypeCode::String:
             case TypeCode::Structure:
             case TypeCode::Callable:
-            case TypeCode::Array: {
+            case TypeCode::Array:
+            case TypeCode::Interface: {
                 byteCode.AddOp(OpCode::POP_ARRAY_OBJECT);
                 break;
             }
@@ -1085,181 +1088,173 @@ void Compiler::CompileAssignment(const BinaryExpression *node, ByteCode &byteCod
     else
     {
         TypeCode typeCode = typeChecker.GetType(node->Left())->GetTypeCode();
-        if (typeCode != typeChecker.GetType(node->Right())->GetTypeCode())
-        {
-            spdlog::error("Assignment type mismatch.");
-
-            throw TreeException(__FILE__, __LINE__, "Assignment type mismatch.", static_cast<const Expression *>(node),
-                                nullptr);
-        }
-        else
+        if (node->Left()->NodeType() == ExpressionType::Parameter)
         {
             Visit(node->Right(), byteCode, constantPool);
-            if (node->Left()->NodeType() == ExpressionType::Parameter)
+            if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::FunctionVariable))
             {
-                if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::FunctionVariable))
+                NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::FunctionVariable);
+                int offset = nameInfo.Number();
+                switch (typeCode)
                 {
-                    NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::FunctionVariable);
-                    int offset = nameInfo.Number();
-                    switch (typeCode)
-                    {
-                    case TypeCode::Boolean:
-                    case TypeCode::Char:
-                    case TypeCode::Int32: {
-                        byteCode.AddOp(OpCode::POP_LOCAL_I32);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Int64: {
-                        byteCode.AddOp(OpCode::POP_LOCAL_I64);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Float32: {
-                        byteCode.AddOp(OpCode::POP_LOCAL_F32);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Float64: {
-                        byteCode.AddOp(OpCode::POP_LOCAL_F64);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::String:
-                    case TypeCode::Structure:
-                    case TypeCode::Array:
-                    case TypeCode::Callable: {
-                        byteCode.AddOp(OpCode::POP_LOCAL_OBJECT);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    default: {
-                        spdlog::error("Assignment to the local variable of this type is not supported.");
-
-                        throw CompilationException(__FILE__, __LINE__,
-                                                   "Assignment to the local variable of this type is not supported.",
-                                                   static_cast<const Expression *>(node), nullptr);
-                    }
-                    }
+                case TypeCode::Boolean:
+                case TypeCode::Char:
+                case TypeCode::Int32: {
+                    byteCode.AddOp(OpCode::POP_LOCAL_I32);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
                 }
-                else if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::GlobalVariable))
-                {
-                    NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::GlobalVariable);
-                    int offset = nameInfo.Number();
-                    switch (typeCode)
-                    {
-                    case TypeCode::Boolean:
-                    case TypeCode::Char:
-                    case TypeCode::Int32: {
-                        byteCode.AddOp(OpCode::POP_GLOBAL_I32);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Int64: {
-                        byteCode.AddOp(OpCode::POP_GLOBAL_I64);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Float32: {
-                        byteCode.AddOp(OpCode::POP_GLOBAL_F32);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::Float64: {
-                        byteCode.AddOp(OpCode::POP_GLOBAL_F64);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    case TypeCode::String:
-                    case TypeCode::Structure:
-                    case TypeCode::Array:
-                    case TypeCode::Callable: {
-                        byteCode.AddOp(OpCode::POP_GLOBAL_OBJECT);
-                        byteCode.AddByte(static_cast<Byte>(offset));
-                        break;
-                    }
-                    default: {
-                        spdlog::error("Assignment to the global variable of this type is not supported.");
-
-                        throw CompilationException(__FILE__, __LINE__,
-                                                   "Assignment to the global variable of this type is not supported.",
-                                                   static_cast<const Expression *>(node), nullptr);
-                    }
-                    }
+                case TypeCode::Int64: {
+                    byteCode.AddOp(OpCode::POP_LOCAL_I64);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
                 }
-                else
-                {
-                    spdlog::error("Assignments only work for variables and structure fields.");
+                case TypeCode::Float32: {
+                    byteCode.AddOp(OpCode::POP_LOCAL_F32);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::Float64: {
+                    byteCode.AddOp(OpCode::POP_LOCAL_F64);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::String:
+                case TypeCode::Structure:
+                case TypeCode::Array:
+                case TypeCode::Callable:
+                case TypeCode::Interface: {
+                    byteCode.AddOp(OpCode::POP_LOCAL_OBJECT);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                default: {
+                    spdlog::error("Assignment to the local variable of this type is not supported.");
 
-                    throw CompilationException(
-                        __FILE__, __LINE__, "Assignments only work for variables and structure fields.", node, nullptr);
+                    throw CompilationException(__FILE__, __LINE__,
+                                               "Assignment to the local variable of this type is not supported.",
+                                               static_cast<const Expression *>(node), nullptr);
+                }
                 }
             }
-            else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
+            else if (nameLocator.ExistsNameInfo(node->Left(), LocationKind::GlobalVariable))
             {
-                const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Left());
-                Visit(memberAccess->GetExpression(), byteCode, constantPool);
-                Visit(node->Right(), byteCode, constantPool);
-                const Type *type = typeChecker.GetType(memberAccess->GetExpression());
-                if (type->GetTypeCode() == TypeCode::Structure)
+                NameInfo nameInfo = nameLocator.GetNameInfo(node->Left(), LocationKind::GlobalVariable);
+                int offset = nameInfo.Number();
+                switch (typeCode)
                 {
-                    const StructureType *structureType = static_cast<const StructureType *>(type);
-                    if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
-                    {
-                        size_t index = structureType->Fields().GetIndexByKey(memberAccess->FieldName());
-                        const Type *fieldType = structureType->Fields().GetItemByIndex(index);
-                        switch (fieldType->GetTypeCode())
-                        {
-                        case TypeCode::Boolean:
-                        case TypeCode::Char:
-                        case TypeCode::Int32: {
-                            byteCode.AddOp(OpCode::POP_FIELD_I32);
-                            byteCode.AddByte(static_cast<Byte>(index));
-                            break;
-                        }
-                        case TypeCode::Int64: {
-                            byteCode.AddOp(OpCode::POP_FIELD_I64);
-                            byteCode.AddByte(static_cast<Byte>(index));
-                            break;
-                        }
-                        case TypeCode::Float32: {
-                            byteCode.AddOp(OpCode::POP_FIELD_F32);
-                            byteCode.AddByte(static_cast<Byte>(index));
-                            break;
-                        }
-                        case TypeCode::Float64: {
-                            byteCode.AddOp(OpCode::POP_FIELD_F64);
-                            byteCode.AddByte(static_cast<Byte>(index));
-                            break;
-                        }
-                        case TypeCode::String:
-                        case TypeCode::Structure: {
-                            byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
-                            byteCode.AddByte(static_cast<Byte>(index));
-                            break;
-                        }
-                        default: {
-                            spdlog::error("Unsupported field type: '{}'.",
-                                          Utility::EnumToString(fieldType->GetTypeCode()));
+                case TypeCode::Boolean:
+                case TypeCode::Char:
+                case TypeCode::Int32: {
+                    byteCode.AddOp(OpCode::POP_GLOBAL_I32);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::Int64: {
+                    byteCode.AddOp(OpCode::POP_GLOBAL_I64);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::Float32: {
+                    byteCode.AddOp(OpCode::POP_GLOBAL_F32);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::Float64: {
+                    byteCode.AddOp(OpCode::POP_GLOBAL_F64);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                case TypeCode::String:
+                case TypeCode::Structure:
+                case TypeCode::Array:
+                case TypeCode::Callable:
+                case TypeCode::Interface: {
+                    byteCode.AddOp(OpCode::POP_GLOBAL_OBJECT);
+                    byteCode.AddByte(static_cast<Byte>(offset));
+                    break;
+                }
+                default: {
+                    spdlog::error("Assignment to the global variable of this type is not supported.");
 
-                            throw CompilationException(__FILE__, __LINE__, "Unsupported field type", node, nullptr);
-                        }
-                        }
+                    throw CompilationException(__FILE__, __LINE__,
+                                               "Assignment to the global variable of this type is not supported.",
+                                               static_cast<const Expression *>(node), nullptr);
+                }
+                }
+            }
+            else
+            {
+                spdlog::error("Assignments only work for variables and structure fields.");
+
+                throw CompilationException(__FILE__, __LINE__,
+                                           "Assignments only work for variables and structure fields.", node, nullptr);
+            }
+        }
+        else if (node->Left()->NodeType() == ExpressionType::MemberAccess)
+        {
+            const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Left());
+            Visit(memberAccess->GetExpression(), byteCode, constantPool);
+            Visit(node->Right(), byteCode, constantPool);
+            const Type *type = typeChecker.GetType(memberAccess->GetExpression());
+            if (type->GetTypeCode() == TypeCode::Structure)
+            {
+                const StructureType *structureType = static_cast<const StructureType *>(type);
+                if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
+                {
+                    size_t index = structureType->Fields().GetIndexByKey(memberAccess->FieldName());
+                    const Type *fieldType = structureType->Fields().GetItemByIndex(index);
+                    switch (fieldType->GetTypeCode())
+                    {
+                    case TypeCode::Boolean:
+                    case TypeCode::Char:
+                    case TypeCode::Int32: {
+                        byteCode.AddOp(OpCode::POP_FIELD_I32);
+                        byteCode.AddByte(static_cast<Byte>(index));
+                        break;
                     }
-                    else
-                    {
-                        spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(memberAccess->FieldName()));
+                    case TypeCode::Int64: {
+                        byteCode.AddOp(OpCode::POP_FIELD_I64);
+                        byteCode.AddByte(static_cast<Byte>(index));
+                        break;
+                    }
+                    case TypeCode::Float32: {
+                        byteCode.AddOp(OpCode::POP_FIELD_F32);
+                        byteCode.AddByte(static_cast<Byte>(index));
+                        break;
+                    }
+                    case TypeCode::Float64: {
+                        byteCode.AddOp(OpCode::POP_FIELD_F64);
+                        byteCode.AddByte(static_cast<Byte>(index));
+                        break;
+                    }
+                    case TypeCode::String:
+                    case TypeCode::Structure:
+                    case TypeCode::Interface: {
+                        byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
+                        byteCode.AddByte(static_cast<Byte>(index));
+                        break;
+                    }
+                    default: {
+                        spdlog::error("Unsupported field type: '{}'.", Utility::EnumToString(fieldType->GetTypeCode()));
 
-                        throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
+                        throw CompilationException(__FILE__, __LINE__, "Unsupported field type", node, nullptr);
+                    }
                     }
                 }
                 else
                 {
-                    spdlog::error("Assignments only work for variables and structure fields.");
+                    spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(memberAccess->FieldName()));
 
-                    throw CompilationException(
-                        __FILE__, __LINE__, "Assignments only work for variables and structure fields.", node, nullptr);
+                    throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
                 }
+            }
+            else
+            {
+                spdlog::error("Assignments only work for variables and structure fields.");
+
+                throw CompilationException(__FILE__, __LINE__,
+                                           "Assignments only work for variables and structure fields.", node, nullptr);
             }
         }
     }

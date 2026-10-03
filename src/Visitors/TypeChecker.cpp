@@ -3,8 +3,8 @@
 #include "Utility/Convert.hpp"
 #include "Utility/StringUtils.hpp"
 #include "Utility/UTF32Functions.hpp"
-#include <spdlog/spdlog.h>
 #include <functional>
+#include <spdlog/spdlog.h>
 #include <unordered_set>
 
 namespace Cygni
@@ -61,6 +61,25 @@ const Type *TypeChecker::VisitBinary(const BinaryExpression *node, Scope<const T
                                         Utility::EnumToString(right->GetTypeCode()) + "'.",
                                     node, nullptr);
             }
+        }
+        case ExpressionType::Modulo: {
+            if (left->GetTypeCode() == TypeCode::Int32 && right->GetTypeCode() == TypeCode::Int32)
+            {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Int32));
+            }
+            else if (left->GetTypeCode() == TypeCode::Int64 && right->GetTypeCode() == TypeCode::Int64)
+            {
+                return Register(node, TypeFactory::CreateBasicType(TypeCode::Int64));
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "Modulo operation requires operands of the same integer type, but got '" +
+                                        Utility::EnumToString(left->GetTypeCode()) + "' and '" +
+                                        Utility::EnumToString(right->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+            break;
         }
         case ExpressionType::GreaterThan:
         case ExpressionType::LessThan:
@@ -515,7 +534,8 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
                         /* Check if the types are equal. */
                         const Type *actualType = Visit(node->FieldsInitialization().GetItemByKey(key), scope);
                         const Type *expectedType = ResolveTypeSyntax(structureDefinition->Fields().GetItemByKey(key));
-                        if (TypeFactory::AreTypesEqual(expectedType, actualType))
+                        if (TypeFactory::AreTypesEqual(expectedType, actualType) ||
+                            Types.IsSubtype(actualType, expectedType))
                         {
                             fieldNameSet.insert(key);
                         }
@@ -617,29 +637,29 @@ const Type *TypeChecker::GetType(const Expression *node)
 void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
 {
     Namespace *top = namespaceStack.top();
-    Scope<const Type *> *scope(parent);
+    Scope<const Type *> scope(parent);
 
     /* Declare the types of global variables. */
     for (const auto &varDecl : top->GlobalVariables().GetAllItems())
     {
-        scope->Declare(varDecl->Name(), ResolveTypeSyntax(varDecl->GetTypeSyntax()));
+        scope.Declare(varDecl->Name(), ResolveTypeSyntax(varDecl->GetTypeSyntax()));
     }
 
     /* Declare the types of functions. */
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
         CallableType *callableType = BuildCallableType(funcDecl);
-        scope->Declare(funcDecl->Name(), callableType);
+        scope.Declare(funcDecl->Name(), callableType);
     }
 
     for (const auto &varDecl : top->GlobalVariables().GetAllItems())
     {
-        CheckGlobalVariable(varDecl, scope, top);
+        CheckGlobalVariable(varDecl, &scope, top);
     }
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
-        const Type *actualType = VisitLambda(funcDecl, scope);
-        const Type *declarationType = scope->Get(funcDecl->Name());
+        const Type *actualType = VisitLambda(funcDecl, &scope);
+        const Type *declarationType = scope.Get(funcDecl->Name());
         if (declarationType->GetTypeCode() != TypeCode::Callable || actualType->GetTypeCode() != TypeCode::Callable)
         {
             throw TreeException(__FILE__, __LINE__,
@@ -670,14 +690,15 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
         {
             const StructureType *structureType = static_cast<const StructureType *>(type);
             Register(structDecl, structureType);
-            scope->Declare(U"this", structureType);
+            Scope<const Type *> structureScope(&scope);
+            structureScope.Declare(U"this", structureType);
             for (const auto &method : structDecl->Methods().GetAllItems())
             {
-                scope->Declare(method->Name(), structureType->Methods().GetItemByKey(method->Name()));
+                structureScope.Declare(method->Name(), structureType->Methods().GetItemByKey(method->Name()));
             }
             for (const auto &method : structDecl->Methods().GetAllItems())
             {
-                const Type *actualType = VisitLambda(method, scope);
+                const Type *actualType = VisitLambda(method, &structureScope);
                 const Type *declarationType = structureType->Methods().GetItemByKey(method->Name());
                 if (declarationType->GetTypeCode() != TypeCode::Callable ||
                     actualType->GetTypeCode() != TypeCode::Callable)
@@ -737,7 +758,7 @@ void TypeChecker::CheckNamespace(Scope<const Type *> *parent)
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
-        CheckNamespace(scope);
+        CheckNamespace(&scope);
         namespaceStack.pop();
     }
 }
@@ -748,10 +769,10 @@ void TypeChecker::CheckGlobalVariable(const VariableDeclarationExpression *node,
     Scope<const Type *> *scope(parent);
     const Type *initializerType = Visit(node->Initializer(), scope);
     const Type *declaredType = ResolveTypeSyntax(node->GetTypeSyntax());
-    if (TypeFactory::AreTypesEqual(declaredType, initializerType))
+    if (TypeFactory::AreTypesEqual(declaredType, initializerType) || Types.IsSubtype(initializerType, declaredType))
     {
-        scope->Declare(node->Name(), initializerType);
-        Register(node, initializerType);
+        scope->Declare(node->Name(), declaredType);
+        Register(node, declaredType);
 
         /* Add the initializer to the namespace. */
         std::u32string initializerName = node->Name() + U"#Initializer";
@@ -1424,18 +1445,21 @@ bool TypeChecker::HasCycle(const InterfaceType *interfaceType)
     const int GRAY = 1;
     const int BLACK = 2;
 
-    std::unordered_map<const InterfaceType*, int> color;
+    std::unordered_map<const InterfaceType *, int> color;
 
-    std::function<bool(const InterfaceType*)> dfs = [&dfs, &color](const InterfaceType* u) -> bool {
+    std::function<bool(const InterfaceType *)> dfs = [&dfs, &color](const InterfaceType *u) -> bool {
         color[u] = GRAY;
 
-        for (const InterfaceType* base : u->BaseInterfaces()) {
+        for (const InterfaceType *base : u->BaseInterfaces())
+        {
             int c = color[base];
 
-            if (c == GRAY) {
+            if (c == GRAY)
+            {
                 return true;
             }
-            if (c == WHITE && dfs(base)) {
+            if (c == WHITE && dfs(base))
+            {
                 return true;
             }
         }

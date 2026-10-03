@@ -54,7 +54,8 @@ void Compile(const std::vector<std::string> &sourceFilePaths, const std::string 
     NameLocator nameLocator = NameLocator(compilationContext.GetNamespaceFactory(), typeChecker);
     nameLocator.InitializeSymbolCounters(&nameInfoScope);
     nameLocator.RegisterAllInfo(&nameInfoScope);
-    nameLocator.CheckNamespace(&nameInfoScope);
+    Scope<NameInfo> nameResolutionScope;
+    nameLocator.CheckNamespace(&nameResolutionScope);
 
     spdlog::info("Start compiling the program.");
     spdlog::info("Source files: {}", sourceFilePaths.size());

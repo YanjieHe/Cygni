@@ -69,6 +69,26 @@ TEST_CASE("test (27 / 9)", "[Arithmetic]")
     REQUIRE(binaryExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("modulo expression can be used in an if condition", "[Arithmetic][Modulo][ControlFlow]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (number % factor == 0) { 1; }");
+
+    auto exp = parser.Statement();
+    REQUIRE(exp->NodeType() == ExpressionType::Conditional);
+
+    auto conditionalExp = static_cast<ConditionalExpression *>(exp);
+    REQUIRE(conditionalExp->Test()->NodeType() == ExpressionType::Equal);
+
+    auto equalityExp = static_cast<BinaryExpression *>(conditionalExp->Test());
+    REQUIRE(equalityExp->Left()->NodeType() == ExpressionType::Modulo);
+    REQUIRE(equalityExp->Right()->NodeType() == ExpressionType::Constant);
+
+    auto moduloExp = static_cast<BinaryExpression *>(equalityExp->Left());
+    REQUIRE(moduloExp->Left()->NodeType() == ExpressionType::Parameter);
+    REQUIRE(moduloExp->Right()->NodeType() == ExpressionType::Parameter);
+}
+
 TEST_CASE("unary minus binds tighter than multiply", "[Unary]")
 {
     CompilationContext compilationContext;
