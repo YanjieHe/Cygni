@@ -5,8 +5,8 @@
 #include "Expressions/Type.hpp"
 #include "Visitors/Scope.hpp"
 #include "Visitors/Visitor.hpp"
-#include <stack>
 #include <functional>
+#include <stack>
 
 namespace Cygni
 {
@@ -67,6 +67,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
     std::vector<const InterfaceType *> GetAllImplementedInterfaces(const StructureType *structureType);
     std::vector<const InterfaceType *> GetAllBaseInterfaces(const InterfaceType *interfaceType);
     bool HasCycle(const InterfaceType *interfaceType);
+    const Type *CheckIndexAccess(const CallExpression *node, const Type *containerType, Scope<const Type *> *scope);
 };
 
 }; /* namespace Visitors */

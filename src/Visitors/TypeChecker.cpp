@@ -386,38 +386,16 @@ const Type *TypeChecker::VisitCall(const CallExpression *node, Scope<const Type 
         {
             return CheckArguments(node, callableType, scope);
         }
-        else if (callableType->GetTypeCode() == TypeCode::Array)
+        else if (callableType->GetTypeCode() == TypeCode::Array || callableType->GetTypeCode() == TypeCode::String)
         {
-            auto arrayType = static_cast<const ArrayType *>(callableType);
-            if (node->Arguments().size() == 1)
-            {
-                auto indexType = Visit(node->Arguments().front(), scope);
-                if (indexType->GetTypeCode() == TypeCode::Int32)
-                {
-                    return Register(node, arrayType->ElementType());
-                }
-                else
-                {
-                    throw TreeException(__FILE__, __LINE__,
-                                        "Array index must be of type 'Int32', but got '" +
-                                            Utility::EnumToString(indexType->GetTypeCode()) + "'.",
-                                        node, nullptr);
-                }
-            }
-            else
-            {
-                throw TreeException(__FILE__, __LINE__,
-                                    "Array access requires exactly 1 index, but got " +
-                                        std::to_string(node->Arguments().size()) + ".",
-                                    node, nullptr);
-            }
+            return CheckIndexAccess(node, callableType, scope);
         }
         else
         {
             throw TreeException(__FILE__, __LINE__,
-                                "Expression is not callable: got '" +
+                                "Expression is neither callable nor indexable: got '" +
                                     Utility::EnumToString(callableType->GetTypeCode()) +
-                                    "' but expected a function or array.",
+                                    "' but expected a function, array, or string.",
                                 node, nullptr);
         }
     }
@@ -1175,6 +1153,10 @@ const Type *TypeChecker::VisitMethodCall(const CallExpression *node, Scope<const
 
                     return CheckArguments(node, callableFieldType, scope);
                 }
+                else if (fieldType->GetTypeCode() == TypeCode::Array || fieldType->GetTypeCode() == TypeCode::String)
+                {
+                    return CheckIndexAccess(node, fieldType, scope);
+                }
                 else
                 {
                     throw TreeException(
@@ -1469,6 +1451,68 @@ bool TypeChecker::HasCycle(const InterfaceType *interfaceType)
     };
 
     return dfs(interfaceType);
+}
+const Type *TypeChecker::CheckIndexAccess(const CallExpression *node, const Type *containerType,
+                                          Scope<const Type *> *scope)
+{
+    if (containerType->GetTypeCode() == TypeCode::Array)
+    {
+        auto arrayType = static_cast<const ArrayType *>(containerType);
+        if (node->Arguments().size() == 1)
+        {
+            auto indexType = Visit(node->Arguments().front(), scope);
+            if (indexType->GetTypeCode() == TypeCode::Int32)
+            {
+                return Register(node, arrayType->ElementType());
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "Array index must be of type 'Int32', but got '" +
+                                        Utility::EnumToString(indexType->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Array access requires exactly 1 index, but got " +
+                                    std::to_string(node->Arguments().size()) + ".",
+                                node, nullptr);
+        }
+    }
+    else if (containerType->GetTypeCode() == TypeCode::String)
+    {
+        if (node->Arguments().size() == 1)
+        {
+            auto indexType = Visit(node->Arguments().front(), scope);
+            if (indexType->GetTypeCode() == TypeCode::Int32)
+            {
+                return Register(node, Types.CreateBasicType(TypeCode::Char));
+            }
+            else
+            {
+                throw TreeException(__FILE__, __LINE__,
+                                    "String index must be of type 'Int32', but got '" +
+                                        Utility::EnumToString(indexType->GetTypeCode()) + "'.",
+                                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "String access requires exactly 1 index, but got " +
+                                    std::to_string(node->Arguments().size()) + ".",
+                                node, nullptr);
+        }
+    }
+    else
+    {
+        throw TreeException(__FILE__, __LINE__,
+                            "Cannot index expression of type '" + Utility::EnumToString(containerType->GetTypeCode()) +
+                                "': expected an array or string.",
+                            node, nullptr);
+    }
 }
 
 }; /* namespace Visitors */
