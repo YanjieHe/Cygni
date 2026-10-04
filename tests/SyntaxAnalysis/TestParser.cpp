@@ -3,11 +3,13 @@
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
 #include "SyntaxAnalysis/ParserException.hpp"
+#include "Compilation/CompilationContext.hpp"
 #include <spdlog/spdlog.h>
 
 using namespace Cygni::LexicalAnalysis;
 using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
+using namespace Cygni::Compilation;
 
 static std::vector<Token> Tokenize(const std::shared_ptr<SourceCodeFile> &sourceCodeFile,
                                    const std::u32string &sourceCode)
@@ -17,17 +19,18 @@ static std::vector<Token> Tokenize(const std::shared_ptr<SourceCodeFile> &source
     return lexer.ReadAll();
 }
 
-static Parser CreateParser(const std::u32string &sourceCode)
+static Parser CreateParser(CompilationContext &compilationContext, const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
     std::vector<Token> tokens = Tokenize(sourceCodeFile, sourceCode);
 
-    return Parser(tokens, sourceCodeFile);
+    return Parser(tokens, sourceCodeFile, compilationContext);
 }
 
 TEST_CASE("test (15 * 72)", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"15 * 72");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"15 * 72");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Multiply);
@@ -40,7 +43,8 @@ TEST_CASE("test (15 * 72)", "[Arithmetic]")
 
 TEST_CASE("test (135 + 27)", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"135 + 27");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"135 + 27");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Add);
@@ -53,7 +57,8 @@ TEST_CASE("test (135 + 27)", "[Arithmetic]")
 
 TEST_CASE("test (27 / 9)", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"27 / 9");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"27 / 9");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Divide);
@@ -64,9 +69,30 @@ TEST_CASE("test (27 / 9)", "[Arithmetic]")
     REQUIRE(binaryExp->Right()->NodeType() == ExpressionType::Constant);
 }
 
+TEST_CASE("modulo expression can be used in an if condition", "[Arithmetic][Modulo][ControlFlow]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (number % factor == 0) { 1; }");
+
+    auto exp = parser.Statement();
+    REQUIRE(exp->NodeType() == ExpressionType::Conditional);
+
+    auto conditionalExp = static_cast<ConditionalExpression *>(exp);
+    REQUIRE(conditionalExp->Test()->NodeType() == ExpressionType::Equal);
+
+    auto equalityExp = static_cast<BinaryExpression *>(conditionalExp->Test());
+    REQUIRE(equalityExp->Left()->NodeType() == ExpressionType::Modulo);
+    REQUIRE(equalityExp->Right()->NodeType() == ExpressionType::Constant);
+
+    auto moduloExp = static_cast<BinaryExpression *>(equalityExp->Left());
+    REQUIRE(moduloExp->Left()->NodeType() == ExpressionType::Parameter);
+    REQUIRE(moduloExp->Right()->NodeType() == ExpressionType::Parameter);
+}
+
 TEST_CASE("unary minus binds tighter than multiply", "[Unary]")
 {
-    Parser parser = CreateParser(U"-5 * 2");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"-5 * 2");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Multiply);
@@ -78,7 +104,8 @@ TEST_CASE("unary minus binds tighter than multiply", "[Unary]")
 
 TEST_CASE("logical not binds tighter than and", "[Unary]")
 {
-    Parser parser = CreateParser(U"not true and false");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"not true and false");
 
     auto exp = parser.ParseOr();
     REQUIRE(exp->NodeType() == ExpressionType::And);
@@ -90,7 +117,8 @@ TEST_CASE("logical not binds tighter than and", "[Unary]")
 
 TEST_CASE("test complex expression", "[Complex]")
 {
-    Parser parser = CreateParser(U"(5 + 8) * 2");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"(5 + 8) * 2");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Multiply);
@@ -103,7 +131,8 @@ TEST_CASE("test complex expression", "[Complex]")
 
 TEST_CASE("simple less-than comparison", "[Relation]")
 {
-    Parser parser = CreateParser(U"1 < 2");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"1 < 2");
 
     auto exp = parser.ParseOr();
     REQUIRE(exp->NodeType() == ExpressionType::LessThan);
@@ -111,14 +140,16 @@ TEST_CASE("simple less-than comparison", "[Relation]")
 
 TEST_CASE("chained comparison is rejected", "[Relation]")
 {
-    Parser parser = CreateParser(U"a < b < c");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"a < b < c");
 
     REQUIRE_THROWS_AS(parser.Statement(), ParserException);
 }
 
 TEST_CASE("test (true and false)", "[Logical]")
 {
-    Parser parser = CreateParser(U"true and false");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true and false");
 
     auto exp = parser.ParseOr();
     REQUIRE(exp->NodeType() == ExpressionType::And);
@@ -131,7 +162,8 @@ TEST_CASE("test (true and false)", "[Logical]")
 
 TEST_CASE("and binds tighter than or", "[Logical]")
 {
-    Parser parser = CreateParser(U"true or false and true");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true or false and true");
 
     auto exp = parser.ParseOr();
     REQUIRE(exp->NodeType() == ExpressionType::Or);
@@ -142,7 +174,8 @@ TEST_CASE("and binds tighter than or", "[Logical]")
 
 TEST_CASE("logical operators are left associative", "[Logical]")
 {
-    Parser parser = CreateParser(U"true and false and true");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true and false and true");
 
     auto exp = parser.ParseOr();
     REQUIRE(exp->NodeType() == ExpressionType::And);
@@ -150,7 +183,8 @@ TEST_CASE("logical operators are left associative", "[Logical]")
 
 TEST_CASE("test (x = 42)", "[Assignment]")
 {
-    Parser parser = CreateParser(U"x = 42;");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"x = 42;");
 
     auto exp = parser.Statement();
     REQUIRE(exp->NodeType() == ExpressionType::Assign);
@@ -163,7 +197,8 @@ TEST_CASE("test (x = 42)", "[Assignment]")
 
 TEST_CASE("member access chains left to right", "[Postfix]")
 {
-    Parser parser = CreateParser(U"a.b.c");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"a.b.c");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::MemberAccess);
@@ -171,7 +206,8 @@ TEST_CASE("member access chains left to right", "[Postfix]")
 
 TEST_CASE("member access has higher precedence than add", "[Postfix]")
 {
-    Parser parser = CreateParser(U"a.b + c");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"a.b + c");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Add);
@@ -179,7 +215,8 @@ TEST_CASE("member access has higher precedence than add", "[Postfix]")
 
 TEST_CASE("test if-else statement", "[ControlFlow]")
 {
-    Parser parser = CreateParser(U"if (true) { 10; } else { 20; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (true) { 10; } else { 20; }");
 
     auto exp = parser.Statement();
     REQUIRE(exp->NodeType() == ExpressionType::Conditional);
@@ -191,7 +228,8 @@ TEST_CASE("test if-else statement", "[ControlFlow]")
 
 TEST_CASE("if else-if else forms nested conditionals", "[ControlFlow]")
 {
-    Parser parser = CreateParser(U"if (a) { 1; } else if (b) { 2; } else { 3; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (a) { 1; } else if (b) { 2; } else { 3; }");
 
     auto stmt = parser.Statement();
     REQUIRE(stmt->NodeType() == ExpressionType::Conditional);
@@ -199,7 +237,8 @@ TEST_CASE("if else-if else forms nested conditionals", "[ControlFlow]")
 
 TEST_CASE("test while statement", "[ControlFlow]")
 {
-    Parser parser = CreateParser(U"while (true) { 35; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"while (true) { 35; }");
 
     auto exp = parser.Statement();
     REQUIRE(exp->NodeType() == ExpressionType::WhileLoop);
@@ -213,7 +252,8 @@ TEST_CASE("test while statement", "[ControlFlow]")
 
 TEST_CASE("nested if inside while", "[ControlFlow]")
 {
-    Parser parser = CreateParser(U"while (a) { if (b) { 1; } }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"while (a) { if (b) { 1; } }");
 
     auto stmt = parser.Statement();
     REQUIRE(stmt->NodeType() == ExpressionType::WhileLoop);
@@ -221,7 +261,8 @@ TEST_CASE("nested if inside while", "[ControlFlow]")
 
 TEST_CASE("nested while inside if", "[ControlFlow]")
 {
-    Parser parser = CreateParser(U"if (a) { while (b) { 1; } }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (a) { while (b) { 1; } }");
 
     auto stmt = parser.Statement();
     REQUIRE(stmt->NodeType() == ExpressionType::Conditional);
@@ -229,7 +270,8 @@ TEST_CASE("nested while inside if", "[ControlFlow]")
 
 TEST_CASE("empty block is allowed", "[Block]")
 {
-    Parser parser = CreateParser(U"{ }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ }");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Block);
@@ -237,7 +279,8 @@ TEST_CASE("empty block is allowed", "[Block]")
 
 TEST_CASE("block can contain multiple statements", "[Block]")
 {
-    Parser parser = CreateParser(U"{ 1; 2; 3; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ 1; 2; 3; }");
 
     auto exp = parser.ParseExpr();
     auto block = static_cast<BlockExpression *>(exp);
@@ -246,7 +289,8 @@ TEST_CASE("block can contain multiple statements", "[Block]")
 
 TEST_CASE("test function call", "[Function]")
 {
-    Parser parser = CreateParser(U"f(12, 13);");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"f(12, 13);");
 
     auto exp = parser.Statement();
     REQUIRE(exp->NodeType() == ExpressionType::Call);
@@ -263,21 +307,26 @@ TEST_CASE("test function call", "[Function]")
 
 TEST_CASE("function declaration with body", "[Function]")
 {
-    Parser parser = CreateParser(U"module M { func f(): Int { 1; } }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func f(): Int { 1; } }");
 
     REQUIRE_NOTHROW(parser.ParseNamespace());
 }
 
-TEST_CASE("function declaration without body", "[Function]")
+TEST_CASE("function declaration without body is rejected", "[Function]")
 {
-    Parser parser = CreateParser(U"module M { func f(): Void; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func f(): Void; }");
 
-    REQUIRE_NOTHROW(parser.ParseNamespace());
+    REQUIRE_THROWS_AS(parser.ParseNamespace(), ParserException);
 }
+
+
 
 TEST_CASE("nested function calls are allowed", "[Call]")
 {
-    Parser parser = CreateParser(U"f()(1)");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"f()(1)");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Call);
@@ -285,7 +334,8 @@ TEST_CASE("nested function calls are allowed", "[Call]")
 
 TEST_CASE("call after member access", "[Call]")
 {
-    Parser parser = CreateParser(U"a.b(c)");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"a.b(c)");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Call);
@@ -293,7 +343,8 @@ TEST_CASE("call after member access", "[Call]")
 
 TEST_CASE("local variable declaration inside block", "[Var]")
 {
-    Parser parser = CreateParser(U"{ var x = 1; x; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x = 1; x; }");
 
     auto exp = parser.ParseExpr();
     auto block = static_cast<BlockExpression *>(exp);
@@ -302,7 +353,8 @@ TEST_CASE("local variable declaration inside block", "[Var]")
 
 TEST_CASE("typed local variable declaration", "[Var]")
 {
-    Parser parser = CreateParser(U"var x: Int = 1;");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"var x: Int = 1;");
 
     auto stmt = parser.Statement();
     REQUIRE(stmt->NodeType() == ExpressionType::VariableDeclaration);
@@ -310,7 +362,8 @@ TEST_CASE("typed local variable declaration", "[Var]")
 
 TEST_CASE("test parsing namespace path", "[Namespace]")
 {
-    Parser parser = CreateParser(U"apple::banana::orange");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"apple::banana::orange");
 
     std::vector<std::u32string> path = parser.ParseNamespacePath();
     REQUIRE(path.size() == 3);
@@ -319,7 +372,8 @@ TEST_CASE("test parsing namespace path", "[Namespace]")
 
 TEST_CASE("qualified namespace path parses as parameter expression", "[Scope]")
 {
-    Parser parser = CreateParser(U"apple::banana::orange");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"apple::banana::orange");
 
     auto exp = parser.ParseExpr();
     REQUIRE(exp->NodeType() == ExpressionType::Parameter);
@@ -327,7 +381,8 @@ TEST_CASE("qualified namespace path parses as parameter expression", "[Scope]")
 
 TEST_CASE("test parsing structure definition with one field", "[Structure]")
 {
-    Parser parser = CreateParser(U"struct Apple { weight: Double; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"struct Apple { weight: Double; }");
 
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
@@ -337,7 +392,8 @@ TEST_CASE("test parsing structure definition with one field", "[Structure]")
 
 TEST_CASE("test parsing structure definition with two fields", "[Structure]")
 {
-    Parser parser = CreateParser(U"struct Apple { weight: Double; price: Double; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"struct Apple { weight: Double; price: Double; }");
 
     StructureExpression *structureDefinition = parser.ParseStructureDefinition();
     REQUIRE(structureDefinition->Fields().GetAllItems().size() == 2);
@@ -347,7 +403,8 @@ TEST_CASE("test parsing structure definition with two fields", "[Structure]")
 
 TEST_CASE("test parsing structure definition with two fields inside a namespace", "[Structure]")
 {
-    Parser parser = CreateParser(U"module Fruits { struct Apple { weight: Double; price: Double; } }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module Fruits { struct Apple { weight: Double; price: Double; } }");
 
     parser.ParseNamespace();
     StructureExpression *structureDefinition =
@@ -359,30 +416,279 @@ TEST_CASE("test parsing structure definition with two fields inside a namespace"
     REQUIRE(structureDefinition->QualifiedName().at(1) == U"Apple");
 }
 
-TEST_CASE("annotation on function declaration", "[Annotation]")
+TEST_CASE("test parsing interface definition with one method", "[Interface]")
 {
-    Parser parser = CreateParser(U"module M { @A(x=\"1\") func f(): Void; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { func draw(width: Int, height: Int): Void; }");
 
-    REQUIRE_NOTHROW(parser.ParseNamespace());
+    InterfaceExpression *interfaceDefinition = parser.ParseInterfaceDefinition();
+    REQUIRE(interfaceDefinition->QualifiedName().size() == 1);
+    REQUIRE(interfaceDefinition->QualifiedName().back() == U"Drawable");
+    REQUIRE(interfaceDefinition->BaseInterfaces().empty());
+    REQUIRE(interfaceDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *draw = interfaceDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Name() == U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Parameters().at(0)->Name() == U"width");
+    REQUIRE(draw->Parameters().at(1)->Name() == U"height");
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Default);
+}
+
+TEST_CASE("interface method with body is rejected", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { func draw(width: Int, height: Int): Void { width * height; } }");
+
+    REQUIRE_THROWS_AS(parser.ParseInterfaceDefinition(), ParserException);
+}
+
+TEST_CASE("test parsing structure implementing an interface", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"struct Circle <: Drawable { "
+                                 U"radius: Int; "
+                                 U"func draw(width: Int, height: Int): Void { this.radius * width * height; } "
+                                 U"}");
+
+    StructureExpression *structureDefinition = parser.ParseStructureDefinition();
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Circle");
+    REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(structureDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *draw = structureDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Name() == U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Parameters().at(0)->Name() == U"width");
+    REQUIRE(draw->Parameters().at(1)->Name() == U"height");
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Block);
+}
+
+TEST_CASE("interface body with a field is rejected", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Drawable { width: Int; func draw(width: Int, height: Int): Void; }");
+
+    REQUIRE_THROWS_AS(parser.ParseInterfaceDefinition(), ParserException);
+}
+
+TEST_CASE("test parsing interface extending another interface", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"interface Shape <: Drawable { func area(): Double; }");
+
+    InterfaceExpression *interfaceDefinition = parser.ParseInterfaceDefinition();
+    REQUIRE(interfaceDefinition->QualifiedName().size() == 1);
+    REQUIRE(interfaceDefinition->QualifiedName().back() == U"Shape");
+    REQUIRE(interfaceDefinition->BaseInterfaces().size() == 1);
+    REQUIRE(interfaceDefinition->BaseInterfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(interfaceDefinition->Methods().GetAllItems().size() == 1);
+
+    LambdaExpression *area = interfaceDefinition->Methods().GetItemByKey(U"area");
+    REQUIRE(area->Name() == U"area");
+    REQUIRE(area->Parameters().empty());
+    REQUIRE(area->Body()->NodeType() == ExpressionType::Default);
+}
+
+TEST_CASE("test parsing structure implementing multiple interfaces", "[Interface]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"struct Circle <: Drawable, Shape { "
+                                 U"radius: Int; "
+                                 U"func draw(width: Int, height: Int): Void { this.radius * width * height; } "
+                                 U"func area(): Double { this.radius * this.radius; } "
+                                 U"}");
+
+    StructureExpression *structureDefinition = parser.ParseStructureDefinition();
+    REQUIRE(structureDefinition->QualifiedName().size() == 1);
+    REQUIRE(structureDefinition->QualifiedName().back() == U"Circle");
+    REQUIRE(structureDefinition->Fields().GetAllItems().size() == 1);
+    REQUIRE(structureDefinition->Interfaces().size() == 2);
+    REQUIRE(structureDefinition->Interfaces().at(0)->QualifiedName().back() == U"Drawable");
+    REQUIRE(structureDefinition->Interfaces().at(1)->QualifiedName().back() == U"Shape");
+    REQUIRE(structureDefinition->Methods().GetAllItems().size() == 2);
+
+    LambdaExpression *draw = structureDefinition->Methods().GetItemByKey(U"draw");
+    REQUIRE(draw->Parameters().size() == 2);
+    REQUIRE(draw->Body()->NodeType() == ExpressionType::Block);
+
+    LambdaExpression *area = structureDefinition->Methods().GetItemByKey(U"area");
+    REQUIRE(area->Parameters().empty());
+    REQUIRE(area->Body()->NodeType() == ExpressionType::Block);
+}
+
+TEST_CASE("single annotation on native function declaration", "[Annotation]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(
+        compilationContext,
+        U"module M { @External(Library=\"libmath.so\", EntryPoint=\"add\") func Add(x: Int, y: Int): Int; }");
+
+    parser.ParseNamespace();
+    LambdaExpression *funcDecl =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Add"});
+
+    REQUIRE(funcDecl != nullptr);
+    REQUIRE(funcDecl->IsNativeFunction());
+    REQUIRE(funcDecl->Annotations().size() == 1);
+    REQUIRE(funcDecl->Annotations().at(0).Name() == U"External");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(0).Name() == U"Library");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(0).Value()) == U"libmath.so");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(1).Name() == U"EntryPoint");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(1).Value()) == U"add");
+}
+
+TEST_CASE("multiple annotations on native function declaration", "[Annotation]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { @Doc(Comment=\"Adds two integers\") "
+                                 U"@External(Library=\"libmath.so\", EntryPoint=\"add\") "
+                                 U"func Add(x: Int, y: Int): Int; }");
+
+    parser.ParseNamespace();
+    LambdaExpression *funcDecl =
+        parser.GetNamespaceFactory().SearchFunction(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Add"});
+
+    REQUIRE(funcDecl != nullptr);
+    REQUIRE(funcDecl->IsNativeFunction());
+    REQUIRE(funcDecl->Annotations().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(0).Name() == U"Doc");
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().size() == 1);
+    REQUIRE(funcDecl->Annotations().at(0).Arguments().at(0).Name() == U"Comment");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(0).Arguments().at(0).Value()) == U"Adds two integers");
+    REQUIRE(funcDecl->Annotations().at(1).Name() == U"External");
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().size() == 2);
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().at(0).Name() == U"Library");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(1).Arguments().at(0).Value()) == U"libmath.so");
+    REQUIRE(funcDecl->Annotations().at(1).Arguments().at(1).Name() == U"EntryPoint");
+    REQUIRE(std::get<std::u32string>(funcDecl->Annotations().at(1).Arguments().at(1).Value()) == U"add");
 }
 
 TEST_CASE("if without parentheses is rejected", "[Error]")
 {
-    Parser parser = CreateParser(U"if true { 1; }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if true { 1; }");
 
     REQUIRE_THROWS_AS(parser.Statement(), ParserException);
 }
 
 TEST_CASE("missing initializer in variable declaration", "[Error]")
 {
-    Parser parser = CreateParser(U"var x = ;");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"var x = ;");
 
     REQUIRE_THROWS_AS(parser.Statement(), ParserException);
 }
 
 TEST_CASE("missing semicolon in new expression", "[Error]")
 {
-    Parser parser = CreateParser(U"new Foo { a = 1 }");
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"new Foo { a = 1 }");
 
     REQUIRE_THROWS_AS(parser.ParseExpr(), ParserException);
+}
+
+// ============================================================================
+// Structure with Methods Tests
+// ============================================================================
+
+TEST_CASE("parse struct with fields only", "[Structure]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Point"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 2);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 0);
+}
+
+TEST_CASE("parse struct with one method", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Counter { value: Int; func increment(): Int { this.value + 1; } } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Counter"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 1);
+    REQUIRE(structDef->Fields().ContainsKey(U"value"));
+    REQUIRE(structDef->Methods().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().ContainsKey(U"increment"));
+}
+
+TEST_CASE("parse struct with multiple methods", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Calc { "
+        U"  value: Int; "
+        U"  func add(x: Int): Int { this.value + x; } "
+        U"  func sub(x: Int): Int { this.value - x; } "
+        U"} }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Calc"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 2);
+    REQUIRE(structDef->Methods().ContainsKey(U"add"));
+    REQUIRE(structDef->Methods().ContainsKey(U"sub"));
+}
+
+TEST_CASE("parse struct with methods only no fields", "[Structure][Method]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+        U"module M { struct Greeter { func greet(): Int { 42; } } }");
+    parser.ParseNamespace();
+
+    StructureExpression *structDef =
+        parser.GetNamespaceFactory().SearchStructure(parser.GetNamespaceFactory().GetRoot(), {U"M", U"Greeter"});
+    REQUIRE(structDef != nullptr);
+    REQUIRE(structDef->Fields().GetAllItems().size() == 0);
+    REQUIRE(structDef->Methods().GetAllItems().size() == 1);
+    REQUIRE(structDef->Methods().ContainsKey(U"greet"));
+}
+
+TEST_CASE("parse new expression with field initialization", "[New]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"new Point { x = 1; y = 2; }");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::New);
+    const NewExpression *newExp = static_cast<const NewExpression *>(exp);
+    REQUIRE(newExp->GetTypeSyntax() != nullptr);
+    REQUIRE(newExp->FieldsInitialization().GetAllKeys().size() == 2);
+    REQUIRE(newExp->FieldsInitialization().ContainsKey(U"x"));
+    REQUIRE(newExp->FieldsInitialization().ContainsKey(U"y"));
+}
+
+TEST_CASE("parse this dot field as member access", "[MemberAccess]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"this.value");
+
+    auto exp = parser.ParseOr();
+    REQUIRE(exp->NodeType() == ExpressionType::MemberAccess);
+    const MemberExpression *memberExp = static_cast<const MemberExpression *>(exp);
+    REQUIRE(memberExp->FieldName() == U"value");
+    REQUIRE(memberExp->GetExpression()->NodeType() == ExpressionType::Parameter);
 }

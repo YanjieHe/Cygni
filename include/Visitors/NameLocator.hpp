@@ -5,6 +5,7 @@
 #include "Utility/HashPair.hpp"
 #include "Visitors/Scope.hpp"
 #include "Visitors/Visitor.hpp"
+#include "Visitors/TypeChecker.hpp"
 #include <stack>
 
 namespace Cygni
@@ -17,15 +18,19 @@ enum class LocationKind
     GlobalVariable,
     FunctionVariable,
     FunctionConstant,
+    ArgumentSlotCount,
     FunctionVariableCount,
     FunctionConstantCount,
     Function,
     NativeFunction,
     Structure,
+    Interface,
+    InterfaceMethod,
     GlobalVariableCount,
     GlobalFunctionCount,
     GlobalNativeFunctionCount,
-    GlobalStructureCount
+    GlobalStructureCount,
+    GlobalInterfaceCount
 };
 
 class NameInfo
@@ -60,9 +65,10 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
     std::unordered_map<std::pair<const Expression *, LocationKind>, NameInfo, Utility::HashPair> nameInfoTable;
     NamespaceFactory &namespaceFactory;
     std::stack<Namespace *> namespaceStack;
+    TypeChecker& typeChecker;
 
   public:
-    NameLocator(NamespaceFactory &namespaceFactory);
+    NameLocator(NamespaceFactory &namespaceFactory, TypeChecker& typeChecker);
     const std::unordered_map<std::pair<const Expression *, LocationKind>, NameInfo, Utility::HashPair> &NameInfoTable()
     {
         return nameInfoTable;
@@ -92,9 +98,12 @@ class NameLocator : public ExpressionVisitor<void, Scope<NameInfo> *>
     void CheckNamespace(Scope<NameInfo> *parent);
     void RegisterGlobalVariable(const VariableDeclarationExpression *node, Scope<NameInfo> *scope);
     void RegisterFunction(const LambdaExpression *node, Scope<NameInfo> *scope);
-    void RegisterStructure(const StructureExpression *node, Scope<NameInfo> *scope);
+    void RegisterStructure(const StructureExpression *node, Scope<NameInfo> *parent);
+    void RegisterInterface(const InterfaceExpression *node, Scope<NameInfo> *scope);
     void RegisterAllInfo(Scope<NameInfo> *scope);
-    void InitializeSymbolCounters(Scope<NameInfo>* scope);
+    void InitializeSymbolCounters(Scope<NameInfo> *scope);
+    void VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent);
+    void VisitMethodCall(const CallExpression* node, Scope<NameInfo>* scope);
 
   private:
     void Register(const Expression *node, const NameInfo &nameInfo);
@@ -106,6 +115,7 @@ inline const std::u32string GLOBAL_NATIVE_FUNCTION_COUNT = U"$GLOBAL_NATIVE_FUNC
 inline const std::u32string GLOBAL_FUNCTION_COUNT = U"$GLOBAL_FUNCTION_COUNT";
 inline const std::u32string GLOBAL_VARIABLE_COUNT = U"$GLOBAL_VARIABLE_COUNT";
 inline const std::u32string GLOBAL_STRUCTURE_COUNT = U"$GLOBAL_STRUCTURE_COUNT";
+inline const std::u32string GLOBAL_INTERFACE_COUNT = U"$GLOBAL_INTERFACE_COUNT";
 }; /* namespace Visitors */
 }; /* namespace Cygni */
 

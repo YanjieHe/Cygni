@@ -5,7 +5,6 @@
 #include <string>
 #include <unordered_map>
 
-
 #include "SourceCodeFile.hpp"
 
 namespace Cygni
@@ -79,6 +78,7 @@ enum class TokenTag
     To,
     ScopeResolutionOperator,
     New,
+    SubtypeOf,
     Eof
 };
 

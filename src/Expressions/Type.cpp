@@ -9,6 +9,49 @@ namespace Cygni
 namespace Expressions
 {
 
+void InterfaceType::FlattenMethods()
+{
+    if (flatteningState == InterfaceMethodFlatteningState::NotStarted)
+    {
+        std::unordered_set<const InterfaceType *> visited;
+        Utility::OrderPreservingMap<std::u32string, const CallableType *> methodsResult;
+
+        FlattenMethodsRecursively(this, visited, methodsResult);
+
+        flattenedMethods = methodsResult;
+        flatteningState = InterfaceMethodFlatteningState::Completed;
+    }
+}
+void InterfaceType::FlattenMethodsRecursively(
+    const InterfaceType *current, std::unordered_set<const InterfaceType *> &visited,
+    Utility::OrderPreservingMap<std::u32string, const CallableType *> &methodsResult)
+{
+    if (visited.find(current) == visited.end())
+    {
+        visited.insert(current);
+
+        for (const InterfaceType *base : current->BaseInterfaces())
+        {
+            FlattenMethodsRecursively(base, visited, methodsResult);
+        }
+
+        for (const std::u32string &methodName : current->Methods().GetAllKeys())
+        {
+            if (!methodsResult.ContainsKey(methodName))
+            {
+                /* The type checker has already verified that inherited methods with the same name have
+                   identical signatures. The first occurrence therefore determines the flattened slot, and
+                   subsequent occurrences can be ignored. */
+                methodsResult.AddItem(methodName, current->Methods().GetItemByKey(methodName));
+            }
+        }
+    }
+    else
+    {
+        /* This interface has already been processed through another inheritance path, so skip it. */
+    }
+}
+
 TypeFactory::~TypeFactory()
 {
     for (auto type : types)
@@ -105,9 +148,15 @@ bool TypeFactory::AreTypesEqual(const Type *a, const Type *b)
             const StructureType *structureTypeB = static_cast<const StructureType *>(b);
             return structureTypeA->QualifiedName() == structureTypeB->QualifiedName();
         }
+        else if (a->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceTypeA = static_cast<const InterfaceType *>(a);
+            const InterfaceType *interfaceTypeB = static_cast<const InterfaceType *>(b);
+            return interfaceTypeA->QualifiedName() == interfaceTypeB->QualifiedName();
+        }
         else
         {
-            throw std::invalid_argument("not supported type");
+            throw std::invalid_argument("Unsupported type code for type equality check.");
         }
     }
     else
@@ -203,11 +252,21 @@ bool TypeFactory::AreOrderedTypesEqual(const std::vector<const Type *> &a, const
     }
 }
 
-StructureType *TypeFactory::CreateStructureType(const std::vector<std::u32string> &qualifiedName,
-                                                const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
-                                                const std::vector<const InterfaceType *> &interfaces)
+StructureType *TypeFactory::CreateStructureType(
+    const std::vector<std::u32string> &qualifiedName,
+    const Utility::OrderPreservingMap<std::u32string, const Type *> &fields,
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+    const std::vector<const InterfaceType *> &interfaces)
 {
-    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, interfaces)));
+    return static_cast<StructureType *>(CreateType(new StructureType(qualifiedName, fields, methods, interfaces)));
+}
+
+InterfaceType *TypeFactory::CreateInterfaceType(
+    const std::vector<std::u32string> &qualifiedName,
+    const Utility::OrderPreservingMap<std::u32string, const CallableType *> &methods,
+    const std::vector<const InterfaceType *> &baseInterfaces)
+{
+    return static_cast<InterfaceType *>(CreateType(new InterfaceType(qualifiedName, methods, baseInterfaces)));
 }
 
 bool TypeFactory::AreUnorderedTypesEqual(const std::vector<const Type *> &a, const std::vector<const Type *> &b)
@@ -243,5 +302,39 @@ Type *TypeFactory::CreateType(Type *type)
     types.push_back(type);
     return type;
 }
+
+bool TypeFactory::IsSubtype(const Type *type, const Type *potentialBase) const
+{
+    if (type->GetTypeCode() == TypeCode::Structure && potentialBase->GetTypeCode() == TypeCode::Interface)
+    {
+        for (const InterfaceType *interface : static_cast<const StructureType *>(type)->Interfaces())
+        {
+            if (AreTypesEqual(interface, potentialBase) || IsSubtype(interface, potentialBase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    else if (type->GetTypeCode() == TypeCode::Interface && potentialBase->GetTypeCode() == TypeCode::Interface)
+    {
+        const InterfaceType *interfaceType = static_cast<const InterfaceType *>(type);
+        for (const InterfaceType *baseInterface : interfaceType->BaseInterfaces())
+        {
+            if (AreTypesEqual(baseInterface, potentialBase) || IsSubtype(baseInterface, potentialBase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 }; /* namespace Expressions */
 }; /* namespace Cygni */

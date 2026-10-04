@@ -221,8 +221,8 @@ TEST_CASE("structure type equality", "[Type]")
         fields2.AddItem(U"x", TypeFactory::CreateBasicType(TypeCode::Int32));
         fields2.AddItem(U"y", TypeFactory::CreateBasicType(TypeCode::Int32));
 
-        auto struct1 = typeFactory.CreateStructureType({U"Point"}, fields1, {});
-        auto struct2 = typeFactory.CreateStructureType({U"Point"}, fields2, {});
+        auto struct1 = typeFactory.CreateStructureType({U"Point"}, fields1, {}, {});
+        auto struct2 = typeFactory.CreateStructureType({U"Point"}, fields2, {}, {});
 
         REQUIRE(TypeFactory::AreTypesEqual(struct1, struct2));
     }
@@ -232,8 +232,8 @@ TEST_CASE("structure type equality", "[Type]")
         Cygni::Utility::OrderPreservingMap<std::u32string, const Type *> fields;
         fields.AddItem(U"x", TypeFactory::CreateBasicType(TypeCode::Int32));
 
-        auto struct1 = typeFactory.CreateStructureType({U"PointA"}, fields, {});
-        auto struct2 = typeFactory.CreateStructureType({U"PointB"}, fields, {});
+        auto struct1 = typeFactory.CreateStructureType({U"PointA"}, fields, {}, {});
+        auto struct2 = typeFactory.CreateStructureType({U"PointB"}, fields, {}, {});
 
         REQUIRE_FALSE(TypeFactory::AreTypesEqual(struct1, struct2));
     }
@@ -243,9 +243,9 @@ TEST_CASE("structure type equality", "[Type]")
         Cygni::Utility::OrderPreservingMap<std::u32string, const Type *> fields;
         fields.AddItem(U"value", TypeFactory::CreateBasicType(TypeCode::Int32));
 
-        auto struct1 = typeFactory.CreateStructureType({U"Math", U"Point"}, fields, {});
-        auto struct2 = typeFactory.CreateStructureType({U"Math", U"Point"}, fields, {});
-        auto struct3 = typeFactory.CreateStructureType({U"Graphics", U"Point"}, fields, {});
+        auto struct1 = typeFactory.CreateStructureType({U"Math", U"Point"}, fields, {}, {});
+        auto struct2 = typeFactory.CreateStructureType({U"Math", U"Point"}, fields, {}, {});
+        auto struct3 = typeFactory.CreateStructureType({U"Graphics", U"Point"}, fields, {}, {});
 
         REQUIRE(TypeFactory::AreTypesEqual(struct1, struct2));
         REQUIRE_FALSE(TypeFactory::AreTypesEqual(struct1, struct3));
@@ -257,8 +257,7 @@ TEST_CASE("structure type equality", "[Type]")
         fields.AddItem(U"name", TypeFactory::CreateBasicType(TypeCode::String));
         fields.AddItem(U"age", TypeFactory::CreateBasicType(TypeCode::Int32));
 
-        auto structType = typeFactory.CreateStructureType({U"Person"}, fields, {});
-
+        auto structType = typeFactory.CreateStructureType({U"Person"}, fields, {}, {});
         REQUIRE(structType->GetTypeCode() == TypeCode::Structure);
         REQUIRE(structType->QualifiedName().size() == 1);
         REQUIRE(structType->QualifiedName()[0] == U"Person");
@@ -275,7 +274,7 @@ TEST_CASE("structure type SetFields", "[Type]")
     SECTION("SetFields updates fields correctly")
     {
         // Create empty structure first
-        auto structType = typeFactory.CreateStructureType({U"Node"}, {}, {});
+        auto structType = typeFactory.CreateStructureType({U"Node"}, {}, {}, {});
         REQUIRE(structType->Fields().GetAllKeys().size() == 0);
 
         // Update fields
@@ -322,7 +321,7 @@ TEST_CASE("different type categories are not equal", "[Type]")
 
     Cygni::Utility::OrderPreservingMap<std::u32string, const Type *> fields;
     fields.AddItem(U"x", intType);
-    auto structType = typeFactory.CreateStructureType({U"Point"}, fields, {});
+    auto structType = typeFactory.CreateStructureType({U"Point"}, fields, {}, {});
 
     SECTION("basic type vs array")
     {

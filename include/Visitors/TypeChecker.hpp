@@ -6,7 +6,7 @@
 #include "Visitors/Scope.hpp"
 #include "Visitors/Visitor.hpp"
 #include <stack>
-
+#include <functional>
 
 namespace Cygni
 {
@@ -18,6 +18,7 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
   private:
     std::unordered_map<const Expression *, const Type *> nodeTypes;
     std::unordered_map<const StructureExpression *, StructureType *> structureTypeCache;
+    std::unordered_map<const InterfaceExpression *, InterfaceType *> interfaceTypeCache;
     TypeFactory Types;
     NamespaceFactory &namespaceFactory;
     ExpressionFactory &expressionFactory;
@@ -50,11 +51,22 @@ class TypeChecker : public ExpressionVisitor<const Type *, Scope<const Type *> *
 
   private:
     const Type *Register(const Expression *node, const Type *type);
-    bool CheckFunctionType(const Type *declaration, const Type *actual);
+    bool CheckReturnType(const Type *declaredReturn, const Type *bodyReturn);
+    bool CheckExactSignature(const CallableType *required, const CallableType *provided);
     const Type *ResolveTypeSyntax(const TypeSyntax *typeSyntax);
     StructureType *ResolveStructureDefinition(StructureExpression *structureDefinition);
+    InterfaceType *ResolveInterfaceDefinition(InterfaceExpression *interfaceDefinition);
     CallableType *BuildCallableType(const LambdaExpression *node);
-    const Type* CheckAssignment(const BinaryExpression* node, Scope<const Type *> *scope);
+    const Type *CheckAssignment(const BinaryExpression *node, Scope<const Type *> *scope);
+    const Type *VisitMethodCall(const CallExpression *node, Scope<const Type *> *scope);
+    const Type *CheckArguments(const CallExpression *node, const Type *callableType, Scope<const Type *> *scope);
+    void CheckInterfaceImplementation(const StructureExpression *node, const StructureType *structureType,
+                                      const InterfaceType *interfaceType);
+    void CheckStructureNameConflicts(const StructureExpression *node, const StructureType *structureType);
+    void CheckInterfaceNameConflicts(const InterfaceExpression *node, const InterfaceType *interfaceType);
+    std::vector<const InterfaceType *> GetAllImplementedInterfaces(const StructureType *structureType);
+    std::vector<const InterfaceType *> GetAllBaseInterfaces(const InterfaceType *interfaceType);
+    bool HasCycle(const InterfaceType *interfaceType);
 };
 
 }; /* namespace Visitors */

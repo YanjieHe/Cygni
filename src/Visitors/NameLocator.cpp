@@ -7,7 +7,8 @@ namespace Cygni
 namespace Visitors
 {
 
-NameLocator::NameLocator(NamespaceFactory &namespaceFactory) : namespaceFactory{namespaceFactory}
+NameLocator::NameLocator(NamespaceFactory &namespaceFactory, TypeChecker &typeChecker)
+    : namespaceFactory{namespaceFactory}, typeChecker{typeChecker}
 {
     namespaceStack.push(namespaceFactory.GetRoot());
 }
@@ -31,20 +32,30 @@ void NameLocator::VisitParameter(const ParameterExpression *node, Scope<NameInfo
 {
     if (node->QualifiedName().size() == 1)
     {
-        NameInfo nameInfo = scope->Get(node->Name());
-        Register(node, nameInfo);
+        if (scope->Exists(node->Name()))
+        {
+            NameInfo nameInfo = scope->Get(node->Name());
+            Register(node, nameInfo);
+        }
+        else
+        {
+            spdlog::error("'{}' is not defined.", Utility::UTF32ToUTF8(node->Name()));
+
+            throw TreeException(__FILE__, __LINE__, Utility::UTF32ToUTF8(U"'" + node->Name() + U"' is not defined."),
+                                node, nullptr);
+        }
     }
     else
     {
         VariableDeclarationExpression *varDecl =
-            namespaceFactory.SearchGlobalVariable(namespaceFactory.GetRoot(), node->QualifiedName());
+            namespaceFactory.SearchGlobalVariable(namespaceStack.top(), node->QualifiedName());
         if (varDecl != nullptr)
         {
             const NameInfo &nameInfo = GetNameInfo(varDecl, LocationKind::GlobalVariable);
 
             return Register(node, nameInfo);
         }
-        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(namespaceFactory.GetRoot(), node->QualifiedName());
+        LambdaExpression *funcDecl = namespaceFactory.SearchFunction(namespaceStack.top(), node->QualifiedName());
         if (funcDecl != nullptr)
         {
             if (ExistsNameInfo(funcDecl, LocationKind::Function))
@@ -99,7 +110,14 @@ void NameLocator::VisitConditional(const ConditionalExpression *node, Scope<Name
 }
 void NameLocator::VisitCall(const CallExpression *node, Scope<NameInfo> *scope)
 {
-    Visit(node->Function(), scope);
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    {
+        VisitMethodCall(node, scope);
+    }
+    else
+    {
+        Visit(node->Function(), scope);
+    }
     for (const auto &arg : node->Arguments())
     {
         Visit(arg, scope);
@@ -110,6 +128,7 @@ void NameLocator::VisitLambda(const LambdaExpression *node, Scope<NameInfo> *par
     Scope<NameInfo> scope(parent);
     scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 0));
     scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
+    Register(node, NameInfo(LocationKind::ArgumentSlotCount, node->Parameters().size()));
     for (const auto &parameter : node->Parameters())
     {
         scope.Declare(parameter->Name(),
@@ -132,26 +151,55 @@ void NameLocator::VisitDefault(const DefaultExpression *node, Scope<NameInfo> *s
 }
 void NameLocator::VisitVariableDeclaration(const VariableDeclarationExpression *node, Scope<NameInfo> *scope)
 {
+    Visit(node->Initializer(), scope);
+
     NameInfo nameInfo(LocationKind::FunctionVariable, scope->Get(LOCAL_VARIABLE_COUNT).Number());
     scope->Declare(node->Name(), nameInfo);
     Register(node, nameInfo);
     scope->Get(LOCAL_VARIABLE_COUNT).Number()++;
-    Visit(node->Initializer(), scope);
 }
 void NameLocator::CheckNamespace(Scope<NameInfo> *parent)
 {
     Namespace *top = namespaceStack.top();
-    Scope<NameInfo> *scope(parent);
+    Scope<NameInfo> scope(parent);
+
+    for (VariableDeclarationExpression *varDecl : top->GlobalVariables().GetAllItems())
+    {
+        const NameInfo &nameInfo = GetNameInfo(varDecl, LocationKind::GlobalVariable);
+
+        scope.Declare(varDecl->Name(), nameInfo);
+    }
+
+    for (LambdaExpression *funcDecl : top->Functions().GetAllItems())
+    {
+        LocationKind kind = funcDecl->IsNativeFunction() ? LocationKind::NativeFunction : LocationKind::Function;
+        const NameInfo &nameInfo = GetNameInfo(funcDecl, kind);
+        scope.Declare(funcDecl->Name(), nameInfo);
+    }
 
     for (const auto &funcDecl : top->Functions().GetAllItems())
     {
-        VisitLambda(funcDecl, scope);
+        VisitLambda(funcDecl, &scope);
+    }
+
+    for (const auto &structDecl : top->Structures().GetAllItems())
+    {
+        Scope<NameInfo> structureScope(&scope);
+        for (const auto &method : structDecl->Methods().GetAllItems())
+        {
+            const NameInfo &nameInfo = GetNameInfo(method, LocationKind::Function);
+            structureScope.Declare(method->Name(), nameInfo);
+        }
+        for (const auto &method : structDecl->Methods().GetAllItems())
+        {
+            VisitMethod(method, &structureScope);
+        }
     }
 
     for (const auto &current : top->Children().GetAllItems())
     {
         namespaceStack.push(current);
-        CheckNamespace(scope);
+        CheckNamespace(&scope);
         namespaceStack.pop();
     }
 }
@@ -179,10 +227,22 @@ void NameLocator::RegisterFunction(const LambdaExpression *node, Scope<NameInfo>
         scope->Get(GLOBAL_FUNCTION_COUNT).Number()++;
     }
 }
-void NameLocator::RegisterStructure(const StructureExpression *node, Scope<NameInfo> *scope)
+void NameLocator::RegisterStructure(const StructureExpression *node, Scope<NameInfo> *parent)
 {
-    NameInfo &nameInfo = scope->Get(GLOBAL_STRUCTURE_COUNT);
+    NameInfo &nameInfo = parent->Get(GLOBAL_STRUCTURE_COUNT);
     Register(node, NameInfo(LocationKind::Structure, nameInfo.Number()));
+    nameInfo.Number()++;
+
+    Scope<NameInfo> scope(parent);
+    for (const auto &method : node->Methods().GetAllItems())
+    {
+        RegisterFunction(method, &scope);
+    }
+}
+void NameLocator::RegisterInterface(const InterfaceExpression *node, Scope<NameInfo> *parent)
+{
+    NameInfo &nameInfo = parent->Get(GLOBAL_INTERFACE_COUNT);
+    Register(node, NameInfo(LocationKind::Interface, nameInfo.Number()));
     nameInfo.Number()++;
 }
 void NameLocator::RegisterAllInfo(Scope<NameInfo> *scope)
@@ -209,6 +269,10 @@ void NameLocator::RegisterAllInfo(Scope<NameInfo> *scope)
         {
             RegisterStructure(structureDefinition, scope);
         }
+        for (InterfaceExpression *interfaceDefinition : top->Interfaces().GetAllItems())
+        {
+            RegisterInterface(interfaceDefinition, scope);
+        }
     }
 }
 void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
@@ -217,6 +281,7 @@ void NameLocator::InitializeSymbolCounters(Scope<NameInfo> *scope)
     scope->Declare(GLOBAL_FUNCTION_COUNT, NameInfo(LocationKind::GlobalFunctionCount, 0));
     scope->Declare(GLOBAL_NATIVE_FUNCTION_COUNT, NameInfo(LocationKind::GlobalNativeFunctionCount, 0));
     scope->Declare(GLOBAL_STRUCTURE_COUNT, NameInfo(LocationKind::GlobalStructureCount, 0));
+    scope->Declare(GLOBAL_INTERFACE_COUNT, NameInfo(LocationKind::GlobalInterfaceCount, 0));
 }
 void NameLocator::VisitNew(const NewExpression *node, Scope<NameInfo> *scope)
 {
@@ -254,6 +319,97 @@ void NameLocator::VisitMember(const MemberExpression *node, Scope<NameInfo> *sco
 void NameLocator::Register(const Expression *node, const NameInfo &nameInfo)
 {
     nameInfoTable.insert({{node, nameInfo.Kind()}, nameInfo});
+}
+
+void NameLocator::VisitMethod(const LambdaExpression *node, Scope<NameInfo> *parent)
+{
+    Scope<NameInfo> scope(parent);
+    scope.Declare(U"this", NameInfo(LocationKind::FunctionVariable, 0));
+    scope.Declare(LOCAL_VARIABLE_COUNT, NameInfo(LocationKind::FunctionVariableCount, 1));
+    scope.Declare(LOCAL_CONSTANT_COUNT, NameInfo(LocationKind::FunctionConstantCount, 0));
+    Register(node, NameInfo(LocationKind::ArgumentSlotCount, node->Parameters().size() + 1));
+
+    for (const auto &parameter : node->Parameters())
+    {
+        scope.Declare(parameter->Name(),
+                      NameInfo(LocationKind::FunctionVariable, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+        scope.Get(LOCAL_VARIABLE_COUNT).Number()++;
+    }
+    Visit(node->Body(), &scope);
+
+    Register(node, NameInfo(LocationKind::FunctionVariableCount, scope.Get(LOCAL_VARIABLE_COUNT).Number()));
+    Register(node, NameInfo(LocationKind::FunctionConstantCount, scope.Get(LOCAL_CONSTANT_COUNT).Number()));
+}
+
+void NameLocator::VisitMethodCall(const CallExpression *node, Scope<NameInfo> *scope)
+{
+    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    {
+        const MemberExpression *member = static_cast<const MemberExpression *>(node->Function());
+        Visit(member->GetExpression(), scope);
+        const Type *receiverType = typeChecker.GetType(member->GetExpression());
+
+        if (receiverType->GetTypeCode() == TypeCode::Structure)
+        {
+            const StructureType *structureType = static_cast<const StructureType *>(receiverType);
+            if (structureType->Methods().ContainsKey(member->FieldName()))
+            {
+                StructureExpression *structureDefinition =
+                    namespaceFactory.SearchStructure(namespaceStack.top(), structureType->QualifiedName());
+
+                LambdaExpression *methodDefinition = structureDefinition->Methods().GetItemByKey(member->FieldName());
+
+                const NameInfo &methodInfo = GetNameInfo(methodDefinition, LocationKind::Function);
+                Register(node, NameInfo(LocationKind::Function, methodInfo.Number()));
+            }
+            else if (structureType->Fields().ContainsKey(member->FieldName()))
+            {
+                /*
+                 * Callable fields are resolved at runtime. Unlike structure methods,
+                 * they do not have a statically determined function index.
+                 */
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Member '" + Utility::UTF32ToUTF8(member->FieldName()) + "' is not defined in structure '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", structureType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else if (receiverType->GetTypeCode() == TypeCode::Interface)
+        {
+            const InterfaceType *interfaceType = static_cast<const InterfaceType *>(receiverType);
+            if (interfaceType->FlattenedMethods().ContainsKey(member->FieldName()))
+            {
+                InterfaceExpression *interfaceDefinition =
+                    namespaceFactory.SearchInterface(namespaceStack.top(), interfaceType->QualifiedName());
+                const NameInfo &interfaceInfo = GetNameInfo(interfaceDefinition, LocationKind::Interface);
+
+                Register(node, NameInfo(LocationKind::Interface, interfaceInfo.Number()));
+                int methodIndex = interfaceType->FlattenedMethods().GetIndexByKey(member->FieldName());
+                Register(node, NameInfo(LocationKind::InterfaceMethod, static_cast<int>(methodIndex)));
+            }
+            else
+            {
+                throw TreeException(
+                    __FILE__, __LINE__,
+                    "Method '" + Utility::UTF32ToUTF8(member->FieldName()) + "' is not defined in interface '" +
+                        Utility::UTF32ToUTF8(Utility::StringUtils::Join(U"::", interfaceType->QualifiedName())) + "'.",
+                    node, nullptr);
+            }
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__, "Expected a structure or interface receiver for method call.", node,
+                                nullptr);
+        }
+    }
+    else
+    {
+        throw TreeException(__FILE__, __LINE__, "Expected a member access expression for method call.", node, nullptr);
+    }
 }
 
 }; /* namespace Visitors */

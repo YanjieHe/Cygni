@@ -1,5 +1,6 @@
 #include <catch2/catch.hpp>
 
+#include "Compilation/CompilationContext.hpp"
 #include "LexicalAnalysis/Lexer.hpp"
 #include "SyntaxAnalysis/Parser.hpp"
 #include "Visitors/TypeChecker.hpp"
@@ -9,18 +10,27 @@ using namespace Cygni::SyntaxAnalysis;
 using namespace Cygni::Expressions;
 using namespace Cygni::Visitors;
 
-static Parser CreateParser(const std::u32string &sourceCode)
+static Parser CreateParser(Cygni::Compilation::CompilationContext &compilationContext, const std::u32string &sourceCode)
 {
     std::shared_ptr<SourceCodeFile> sourceCodeFile = std::make_shared<SourceCodeFile>("source-code-file");
     Lexer lexer(sourceCodeFile, sourceCode);
     std::vector<Token> tokens = lexer.ReadAll();
 
-    return Parser(tokens, sourceCodeFile);
+    return Parser(tokens, sourceCodeFile, compilationContext);
+}
+
+static const InterfaceType *GetInterfaceType(Parser &parser, TypeChecker &typeChecker,
+                                             const std::u32string &interfaceName)
+{
+    Namespace *module = parser.GetNamespaceFactory().GetRoot()->Children().GetItemByKey(U"M");
+    InterfaceExpression *interfaceExpression = module->Interfaces().GetItemByKey(interfaceName);
+    return static_cast<const InterfaceType *>(typeChecker.GetType(interfaceExpression));
 }
 
 TEST_CASE("test (36 / 9)", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"36 / 9");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"36 / 9");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -31,7 +41,8 @@ TEST_CASE("test (36 / 9)", "[Arithmetic]")
 
 TEST_CASE("test variable declaration", "[Variable]")
 {
-    Parser parser = CreateParser(U"{ var a = 'a'; a; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var a = 'a'; a; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -42,7 +53,8 @@ TEST_CASE("test variable declaration", "[Variable]")
 
 TEST_CASE("test shadowing outer variable", "[Variable]")
 {
-    Parser parser = CreateParser(U"{ var x = 10; { var x = \"variable x\"; x; }; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x = 10; { var x = \"variable x\"; x; }; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -53,7 +65,8 @@ TEST_CASE("test shadowing outer variable", "[Variable]")
 
 TEST_CASE("test conditional", "[Conditional]")
 {
-    Parser parser = CreateParser(U"if (1 < 2) { 10.3; } else { false; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (1 < 2) { 10.3; } else { false; }");
     auto exp = parser.Statement();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -64,7 +77,8 @@ TEST_CASE("test conditional", "[Conditional]")
 
 TEST_CASE("test loop", "[WhileLoop]")
 {
-    Parser parser = CreateParser(U"{ var i = 0; while (i < 10) { i = i + 1; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var i = 0; while (i < 10) { i = i + 1; } }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -75,8 +89,9 @@ TEST_CASE("test loop", "[WhileLoop]")
 
 TEST_CASE("test function declaration", "[Function]")
 {
-    Parser parser = CreateParser(U"func f(x: Double, y: Double): Double { x + y; }");
-    auto exp = parser.FunctionDeclarationStatement({});
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"func f(x: Double, y: Double): Double { x + y; }");
+    auto exp = parser.FunctionDeclarationStatement({}, FunctionParseKind::ModuleFunction);
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> scope;
@@ -90,12 +105,85 @@ TEST_CASE("test function declaration", "[Function]")
 }
 
 // ============================================================================
+// Namespace Visibility Tests
+// ============================================================================
+
+TEST_CASE("adventurers guild can call its own reward function without qualification", "[Namespace][Function]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module AdventurersGuild { "
+                                                     U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                     U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("adventurers guild cannot call a sibling treasury function without qualification",
+          "[Namespace][Function][Error]")
+{
+    SECTION("treasury is declared before the guild")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"module RoyalTreasury { "
+                                                         U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                         U"} "
+                                                         U"module AdventurersGuild { "
+                                                         U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                         U"}");
+        parser.ParseNamespace();
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+        Scope<const Type *> scope;
+        REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                            Catch::Matchers::Contains("'CalculateQuestReward' is not defined"));
+    }
+
+    SECTION("guild is declared before the treasury")
+    {
+        Cygni::Compilation::CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"module AdventurersGuild { "
+                                                         U"  func Main(): Int { CalculateQuestReward(5); } "
+                                                         U"} "
+                                                         U"module RoyalTreasury { "
+                                                         U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                         U"}");
+        parser.ParseNamespace();
+        TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+        Scope<const Type *> scope;
+        REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                            Catch::Matchers::Contains("'CalculateQuestReward' is not defined"));
+    }
+}
+
+TEST_CASE("adventurers guild can call a sibling treasury function with a qualified name", "[Namespace][Function]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module RoyalTreasury { "
+                                                     U"  func CalculateQuestReward(rank: Int): Int { rank * 100; } "
+                                                     U"} "
+                                                     U"module AdventurersGuild { "
+                                                     U"  func Main(): Int { RoyalTreasury::CalculateQuestReward(5); } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+// ============================================================================
 // Arithmetic Operations Tests
 // ============================================================================
 
 TEST_CASE("test addition of integers", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"15 + 27");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"15 + 27");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -106,7 +194,8 @@ TEST_CASE("test addition of integers", "[Arithmetic]")
 
 TEST_CASE("test subtraction of integers", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"100 - 42");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"100 - 42");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -117,7 +206,8 @@ TEST_CASE("test subtraction of integers", "[Arithmetic]")
 
 TEST_CASE("test multiplication of integers", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"7 * 8");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"7 * 8");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -126,9 +216,34 @@ TEST_CASE("test multiplication of integers", "[Arithmetic]")
     REQUIRE(type->GetTypeCode() == TypeCode::Int32);
 }
 
+TEST_CASE("type check modulo of integers", "[Arithmetic][Modulo]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"10 % 3");
+    auto exp = parser.ParseOr();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    const Type *type = typeChecker.Visit(exp, &scope);
+    REQUIRE(type->GetTypeCode() == TypeCode::Int32);
+}
+
+TEST_CASE("type check modulo rejects non-matching integer operands", "[Arithmetic][Modulo][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"10 % 3.14");
+    auto exp = parser.ParseOr();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.Visit(exp, &scope),
+                        Catch::Matchers::Contains("Modulo operation requires operands of the same integer type"));
+}
+
 TEST_CASE("test arithmetic with doubles", "[Arithmetic]")
 {
-    Parser parser = CreateParser(U"3.14 + 2.71");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"3.14 + 2.71");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -139,7 +254,8 @@ TEST_CASE("test arithmetic with doubles", "[Arithmetic]")
 
 TEST_CASE("test arithmetic type mismatch throws exception", "[Arithmetic][Error]")
 {
-    Parser parser = CreateParser(U"10 + 3.14");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"10 + 3.14");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -153,7 +269,8 @@ TEST_CASE("test arithmetic type mismatch throws exception", "[Arithmetic][Error]
 
 TEST_CASE("test less than comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"5 < 10");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"5 < 10");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -164,7 +281,8 @@ TEST_CASE("test less than comparison", "[Comparison]")
 
 TEST_CASE("test greater than comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"100 > 50");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"100 > 50");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -175,7 +293,8 @@ TEST_CASE("test greater than comparison", "[Comparison]")
 
 TEST_CASE("test equality comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"42 == 42");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"42 == 42");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -186,7 +305,8 @@ TEST_CASE("test equality comparison", "[Comparison]")
 
 TEST_CASE("test inequality comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"1 != 2");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"1 != 2");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -197,7 +317,8 @@ TEST_CASE("test inequality comparison", "[Comparison]")
 
 TEST_CASE("test string comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"\"hello\" < \"world\"");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"\"hello\" < \"world\"");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -208,7 +329,8 @@ TEST_CASE("test string comparison", "[Comparison]")
 
 TEST_CASE("test char comparison", "[Comparison]")
 {
-    Parser parser = CreateParser(U"'a' < 'z'");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"'a' < 'z'");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -223,7 +345,8 @@ TEST_CASE("test char comparison", "[Comparison]")
 
 TEST_CASE("test logical and", "[Logical]")
 {
-    Parser parser = CreateParser(U"true and false");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true and false");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -234,7 +357,8 @@ TEST_CASE("test logical and", "[Logical]")
 
 TEST_CASE("test logical or", "[Logical]")
 {
-    Parser parser = CreateParser(U"true or false");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true or false");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -245,7 +369,8 @@ TEST_CASE("test logical or", "[Logical]")
 
 TEST_CASE("test logical not", "[Logical][Unary]")
 {
-    Parser parser = CreateParser(U"not true");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"not true");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -256,7 +381,8 @@ TEST_CASE("test logical not", "[Logical][Unary]")
 
 TEST_CASE("test logical not with non-boolean throws exception", "[Logical][Unary][Error]")
 {
-    Parser parser = CreateParser(U"not 123");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"not 123");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -266,7 +392,8 @@ TEST_CASE("test logical not with non-boolean throws exception", "[Logical][Unary
 
 TEST_CASE("test logical and with non-boolean throws exception", "[Logical][Error]")
 {
-    Parser parser = CreateParser(U"true and 42");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true and 42");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -280,7 +407,8 @@ TEST_CASE("test logical and with non-boolean throws exception", "[Logical][Error
 
 TEST_CASE("test undefined variable throws exception", "[Variable][Error]")
 {
-    Parser parser = CreateParser(U"{ undefinedVar; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ undefinedVar; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -290,7 +418,8 @@ TEST_CASE("test undefined variable throws exception", "[Variable][Error]")
 
 TEST_CASE("test variable assignment", "[Variable]")
 {
-    Parser parser = CreateParser(U"{ var x = 10; x = 20; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x = 10; x = 20; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -301,7 +430,8 @@ TEST_CASE("test variable assignment", "[Variable]")
 
 TEST_CASE("test variable type annotation", "[Variable]")
 {
-    Parser parser = CreateParser(U"{ var x: Int = 42; x; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x: Int = 42; x; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -312,7 +442,8 @@ TEST_CASE("test variable type annotation", "[Variable]")
 
 TEST_CASE("test variable type mismatch throws exception", "[Variable][Error]")
 {
-    Parser parser = CreateParser(U"{ var x: Int = 3.14; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x: Int = 3.14; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -326,7 +457,8 @@ TEST_CASE("test variable type mismatch throws exception", "[Variable][Error]")
 
 TEST_CASE("test conditional with same branch types", "[Conditional]")
 {
-    Parser parser = CreateParser(U"if (true) { 10; } else { 20; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (true) { 10; } else { 20; }");
     auto exp = parser.Statement();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -337,7 +469,8 @@ TEST_CASE("test conditional with same branch types", "[Conditional]")
 
 TEST_CASE("test conditional with non-boolean condition throws exception", "[Conditional][Error]")
 {
-    Parser parser = CreateParser(U"if (123) { 10; } else { 20; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"if (123) { 10; } else { 20; }");
     auto exp = parser.Statement();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -351,7 +484,8 @@ TEST_CASE("test conditional with non-boolean condition throws exception", "[Cond
 
 TEST_CASE("test while loop with non-boolean condition throws exception", "[WhileLoop][Error]")
 {
-    Parser parser = CreateParser(U"{ while (42) { 1; } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ while (42) { 1; } }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -365,7 +499,9 @@ TEST_CASE("test while loop with non-boolean condition throws exception", "[While
 
 TEST_CASE("test function call with correct arguments", "[Function][Call]")
 {
-    Parser parser = CreateParser(U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1, 2); } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(
+        compilationContext, U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1, 2); } }");
     parser.ParseNamespace();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -375,7 +511,9 @@ TEST_CASE("test function call with correct arguments", "[Function][Call]")
 
 TEST_CASE("test function call with wrong argument count throws exception", "[Function][Call][Error]")
 {
-    Parser parser = CreateParser(U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1); } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1); } }");
     parser.ParseNamespace();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -385,7 +523,10 @@ TEST_CASE("test function call with wrong argument count throws exception", "[Fun
 
 TEST_CASE("test function call with wrong argument type throws exception", "[Function][Call][Error]")
 {
-    Parser parser = CreateParser(U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1, 3.14); } }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext,
+                     U"module M { func add(a: Int, b: Int): Int { a + b; } func Main(): Int { add(1, 3.14); } }");
     parser.ParseNamespace();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -395,7 +536,8 @@ TEST_CASE("test function call with wrong argument type throws exception", "[Func
 
 TEST_CASE("test calling non-callable throws exception", "[Function][Call][Error]")
 {
-    Parser parser = CreateParser(U"{ var x = 10; x(1); }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x = 10; x(1); }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -409,7 +551,8 @@ TEST_CASE("test calling non-callable throws exception", "[Function][Call][Error]
 
 TEST_CASE("test integer constant", "[Constant]")
 {
-    Parser parser = CreateParser(U"42");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"42");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -420,7 +563,8 @@ TEST_CASE("test integer constant", "[Constant]")
 
 TEST_CASE("test float constant", "[Constant]")
 {
-    Parser parser = CreateParser(U"3.14159");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"3.14159");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -431,7 +575,8 @@ TEST_CASE("test float constant", "[Constant]")
 
 TEST_CASE("test boolean constant true", "[Constant]")
 {
-    Parser parser = CreateParser(U"true");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"true");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -442,7 +587,8 @@ TEST_CASE("test boolean constant true", "[Constant]")
 
 TEST_CASE("test boolean constant false", "[Constant]")
 {
-    Parser parser = CreateParser(U"false");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"false");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -453,7 +599,8 @@ TEST_CASE("test boolean constant false", "[Constant]")
 
 TEST_CASE("test string constant", "[Constant]")
 {
-    Parser parser = CreateParser(U"\"hello world\"");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"\"hello world\"");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -464,7 +611,8 @@ TEST_CASE("test string constant", "[Constant]")
 
 TEST_CASE("test character constant", "[Constant]")
 {
-    Parser parser = CreateParser(U"'x'");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"'x'");
     auto exp = parser.ParseOr();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -479,7 +627,8 @@ TEST_CASE("test character constant", "[Constant]")
 
 TEST_CASE("test empty block", "[Block]")
 {
-    Parser parser = CreateParser(U"{ }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -490,7 +639,8 @@ TEST_CASE("test empty block", "[Block]")
 
 TEST_CASE("test block returns last expression type", "[Block]")
 {
-    Parser parser = CreateParser(U"{ 1; 2; 3; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ 1; 2; 3; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
@@ -501,11 +651,586 @@ TEST_CASE("test block returns last expression type", "[Block]")
 
 TEST_CASE("test nested blocks with variable scoping", "[Block][Variable]")
 {
-    Parser parser = CreateParser(U"{ var x = 1; { var y = 2; x + y; }; }");
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"{ var x = 1; { var y = 2; x + y; }; }");
     auto exp = parser.ParseBlock();
     TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
 
     Scope<const Type *> scope;
     const Type *type = typeChecker.Visit(exp, &scope);
     REQUIRE(type->GetTypeCode() == TypeCode::Int32);
+}
+
+// ============================================================================
+// Structure and Method Tests
+// ============================================================================
+
+TEST_CASE("type check struct with fields only", "[Structure]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } "
+                                         U"func Main(): Int { var p = new Point { x = 1; y = 2; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method returns correct type", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Counter { value: Int; "
+                                         U"  func get(): Int { this.value; } } "
+                                         U"func Main(): Int { var c = new Counter { value = 10; }; c.get(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method with parameters", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Calc { value: Int; "
+                                         U"  func add(x: Int): Int { this.value + x; } } "
+                                         U"func Main(): Int { var c = new Calc { value = 5; }; c.add(3); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct method this field access", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext,
+                                 U"module M { struct Rect { width: Int; height: Int; "
+                                 U"  func area(): Int { this.width * this.height; } } "
+                                 U"func Main(): Int { var r = new Rect { width = 3; height = 4; }; r.area(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check method call with wrong argument count throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Adder { base: Int; "
+                                         U"  func add(x: Int): Int { this.base + x; } } "
+                                         U"func Main(): Int { var a = new Adder { base = 1; }; a.add(1, 2); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method call with wrong argument type throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Adder { base: Int; "
+                                         U"  func add(x: Int): Int { this.base + x; } } "
+                                         U"func Main(): Int { var a = new Adder { base = 1; }; a.add(3.14); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check calling non-existent method throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Point { x: Int; } "
+                                         U"func Main(): Int { var p = new Point { x = 1; }; p.nonexistent(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method return type mismatch throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { struct Counter { value: Int; "
+                                                     U"  func getAsDouble(): Double { this.value; } } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check method call on non-struct throws", "[Structure][Method][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { func Main(): Int { var n = 10; n.increment(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check struct with multiple methods", "[Structure][Method]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Vec2 { x: Int; y: Int; "
+                                         U"  func getX(): Int { this.x; } "
+                                         U"  func getY(): Int { this.y; } "
+                                         U"  func sum(): Int { this.x + this.y; } } "
+                                         U"func Main(): Int { var v = new Vec2 { x = 3; y = 4; }; v.sum(); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+// ============================================================================
+// Interface Implementation Tests
+// ============================================================================
+
+TEST_CASE("type check struct implementing interface with matching method", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                         U"struct Circle <: Drawable { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+                                         U"} "
+                                         U"func Main(): Int { var c = new Circle { radius = 2; }; c.draw(10, 10); } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct missing interface method throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                                     U"struct Circle <: Drawable { radius: Int; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check struct interface method signature mismatch throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                                     U"struct Circle <: Drawable { "
+                                                     U"  radius: Int; "
+                                                     U"  func draw(width: Int): Int { this.radius * width; } "
+                                                     U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check assign struct to interface and call method", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                         U"struct Circle <: Drawable { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+                                         U"} "
+                                         U"func Main(): Int { "
+                                         U"  var c = new Circle { radius = 2; }; "
+                                         U"  var d: Drawable = c; "
+                                         U"  d.draw(10, 10); "
+                                         U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check structure subtype in interface field initializer", "[Interface][Structure][New]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface IntList { func sum(): Int; } "
+                                         U"struct EmptyList <: IntList { "
+                                         U"  func sum(): Int { 0; } "
+                                         U"} "
+                                         U"struct ListNode { next: IntList; } "
+                                         U"func Main(): Int { "
+                                         U"  var end = new EmptyList { }; "
+                                         U"  var list = new ListNode { next = end; }; "
+                                         U"  list.next.sum(); "
+                                         U"} } ");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check structure subtype in explicitly typed global interface variable",
+          "[Interface][GlobalVariable]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface IntList { func sum(): Int; } "
+                                         U"struct EmptyList <: IntList { "
+                                         U"  func sum(): Int { 0; } "
+                                         U"} "
+                                         U"var Empty: IntList = new EmptyList { }; "
+                                         U"func Main(): Int { Empty.sum(); } "
+                                         U"} ");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    VariableDeclarationExpression *empty = parser.GetNamespaceFactory().SearchGlobalVariable(
+        parser.GetNamespaceFactory().GetRoot(), {U"M", U"Empty"});
+    LambdaExpression *main = parser.GetNamespaceFactory().SearchFunction(
+        parser.GetNamespaceFactory().GetRoot(), {U"M", U"Main"});
+    BlockExpression *body = static_cast<BlockExpression *>(main->Body());
+    CallExpression *call = static_cast<CallExpression *>(body->Expressions().front());
+    MemberExpression *member = static_cast<MemberExpression *>(call->Function());
+
+    REQUIRE(typeChecker.GetType(empty)->GetTypeCode() == TypeCode::Interface);
+    REQUIRE(typeChecker.GetType(member->GetExpression())->GetTypeCode() == TypeCode::Interface);
+}
+
+TEST_CASE("type check pass struct to interface parameter", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                         U"struct Circle <: Drawable { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+                                         U"} "
+                                         U"func Paint(d: Drawable): Int { d.draw(10, 10); } "
+                                         U"func Main(): Int { "
+                                         U"  var c = new Circle { radius = 2; }; "
+                                         U"  Paint(c); "
+                                         U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check struct missing inherited interface method throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                                     U"interface Shape <: Drawable { func area(): Int; } "
+                                                     U"struct Circle <: Shape { "
+                                                     U"  radius: Int; "
+                                                     U"  func area(): Int { this.radius * this.radius; } "
+                                                     U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check function returning subtype of declared type", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                         U"struct Circle <: Drawable { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+                                         U"} "
+                                         U"func Get(): Drawable { var c = new Circle { radius = 2; }; c; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check interface method return type must match exactly", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Drawable; } "
+                                         U"struct Circle <: Drawable { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Circle { this; } "
+                                         U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check field and method with the same name throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"struct Circle { "
+                                                     U"  radius: Int; "
+                                                     U"  func radius(): Int { 1; } "
+                                                     U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check field and interface method with the same name throws", "[Interface][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Measurable { func radius(): Int; } "
+                                                     U"struct Circle <: Measurable { radius: Int; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check call parent interface method on child interface", "[Interface]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { "
+                                         U"interface Drawable { func draw(width: Int, height: Int): Int; } "
+                                         U"interface Shape <: Drawable { func area(): Int; } "
+                                         U"struct Circle <: Shape { "
+                                         U"  radius: Int; "
+                                         U"  func draw(width: Int, height: Int): Int { this.radius * width * height; } "
+                                         U"  func area(): Int { this.radius * this.radius; } "
+                                         U"} "
+                                         U"func Main(): Int { "
+                                         U"  var c = new Circle { radius = 2; }; "
+                                         U"  var s: Shape = c; "
+                                         U"  s.draw(10, 10); "
+                                         U"} }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check interface self-inheritance reports a cycle", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: A { func a(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check direct interface inheritance cycle reports an error", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: B { func a(): Int; } "
+                                                     U"interface B <: A { func b(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check transitive interface inheritance cycle reports an error", "[Interface][Cycle][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A <: B { func a(): Int; } "
+                                                     U"interface B <: C { func b(): Int; } "
+                                                     U"interface C <: A { func c(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_WITH(typeChecker.CheckNamespace(&scope),
+                        Catch::Matchers::Contains("Cyclic inheritance detected"));
+}
+
+TEST_CASE("type check diamond interface inheritance is not a cycle", "[Interface][Cycle]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface A { func a(): Int; } "
+                                                     U"interface B <: A { func b(): Int; } "
+                                                     U"interface C <: A { func c(): Int; } "
+                                                     U"interface D <: B, C { func d(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("flatten player abilities in parent declaration order", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Movable { func move(): Int; func stop(): Int; } "
+                                                     U"interface Damageable { func takeDamage(): Int; } "
+                                                     U"interface Player <: Movable, Damageable { "
+                                                     U"  func useItem(): Int; "
+                                                     U"  func interact(): Int; "
+                                                     U"} "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Player");
+    const std::vector<std::u32string> expectedMethodNames = {U"move", U"stop", U"takeDamage", U"useItem",
+                                                             U"interact"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
+}
+
+TEST_CASE("flatten monster abilities deduplicates shared entity methods", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Entity { func id(): Int; } "
+                                                     U"interface Movable <: Entity { func move(): Int; } "
+                                                     U"interface Attackable <: Entity { func attack(): Int; } "
+                                                     U"interface Monster <: Movable, Attackable { func dropLoot(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Monster");
+    const std::vector<std::u32string> expectedMethodNames = {U"id", U"move", U"attack", U"dropLoot"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
+}
+
+TEST_CASE("flatten boss abilities merges compatible level requirements", "[Interface][FlattenMethods]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"interface Combatant { func level(): Int; } "
+                                                     U"interface QuestTarget { func level(): Int; } "
+                                                     U"interface Boss <: Combatant, QuestTarget { func enrage(): Int; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+
+    const InterfaceType *interfaceType = GetInterfaceType(parser, typeChecker, U"Boss");
+    const std::vector<std::u32string> expectedMethodNames = {U"level", U"enrage"};
+    REQUIRE(interfaceType->FlattenedMethods().GetAllKeys() == expectedMethodNames);
+}
+
+// ============================================================================
+// New Expression Error Tests
+// ============================================================================
+
+TEST_CASE("type check new with field type mismatch throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } "
+                                         U"func Main(): Int { var p = new Point { x = 1; y = 3.14; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check new with missing fields throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } "
+                                                     U"func Main(): Int { var p = new Point { x = 1; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check new with non-existent field throws", "[Structure][New][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser =
+        CreateParser(compilationContext, U"module M { struct Point { x: Int; y: Int; } "
+                                         U"func Main(): Int { var p = new Point { x = 1; y = 2; z = 3; }; p.x; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+// ============================================================================
+// Field Access Type Tests
+// ============================================================================
+
+TEST_CASE("type check field access returns correct type", "[Structure][MemberAccess]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(
+        compilationContext, U"module M { struct Pair { first: Int; second: Double; } "
+                            U"func GetFirst(): Int { var p = new Pair { first = 1; second = 2.0; }; p.first; } "
+                            U"func GetSecond(): Double { var p = new Pair { first = 1; second = 2.0; }; p.second; } }");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
 }

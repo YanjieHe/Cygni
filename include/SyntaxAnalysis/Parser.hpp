@@ -1,6 +1,7 @@
 #ifndef CYGNI_EXPRESSIONS_PARSER_HPP
 #define CYGNI_EXPRESSIONS_PARSER_HPP
 
+#include "Compilation/CompilationContext.hpp"
 #include "Expressions/Expression.hpp"
 #include "Expressions/Namespace.hpp"
 #include "Expressions/SourceRange.hpp"
@@ -19,19 +20,25 @@ using namespace Cygni::Expressions;
 using ExpPtr = Expressions::Expression *;
 using TypeSyntaxPtr = Expressions::TypeSyntax *;
 
+enum class FunctionParseKind
+{
+    InterfaceMethod,
+    StructureMethod,
+    ModuleFunction
+};
+
 class Parser
 {
   private:
     std::vector<Token> tokens;
     std::shared_ptr<LexicalAnalysis::SourceCodeFile> document;
     int offset;
-    Expressions::ExpressionFactory expressionFactory;
-    Expressions::TypeSyntaxFactory typeSyntaxFactory;
-    Expressions::NamespaceFactory namespaceFactory;
+    Compilation::CompilationContext &compilationContext;
     std::stack<Expressions::Namespace *> namespaceStack;
 
   public:
-    Parser(std::vector<Token> tokens, std::shared_ptr<LexicalAnalysis::SourceCodeFile> document);
+    Parser(std::vector<Token> tokens, std::shared_ptr<LexicalAnalysis::SourceCodeFile> document,
+           Compilation::CompilationContext &compilationContext);
 
     inline bool IsEof() const
     {
@@ -60,14 +67,19 @@ class Parser
         return Expressions::SourceRange{document, token.line, Look().line, token.column, Look().column};
     }
 
-    Expressions::NamespaceFactory &GetNamespaceFactory()
+    NamespaceFactory &GetNamespaceFactory()
     {
-        return namespaceFactory;
+        return compilationContext.GetNamespaceFactory();
     }
 
-    Expressions::ExpressionFactory &GetExpressionFactory()
+    ExpressionFactory &GetExpressionFactory()
     {
-        return expressionFactory;
+        return compilationContext.GetExpressionFactory();
+    }
+
+    TypeSyntaxFactory &GetTypeSyntaxFactory()
+    {
+        return compilationContext.GetTypeSyntaxFactory();
     }
 
     ExpPtr Statement();
@@ -102,11 +114,14 @@ class Parser
 
     Expressions::VariableDeclarationExpression *VariableDeclarationStatement();
 
-    Expressions::LambdaExpression *FunctionDeclarationStatement(const std::vector<Annotation> &annotations);
+    Expressions::LambdaExpression *FunctionDeclarationStatement(const std::vector<Annotation> &annotations,
+                                                                FunctionParseKind kind);
 
     Expressions::VariableDeclarationExpression *ParseGlobalVariable();
 
     Expressions::StructureExpression *ParseStructureDefinition();
+
+    Expressions::InterfaceExpression *ParseInterfaceDefinition();
 
     std::vector<ExpPtr> ParseArguments();
 
@@ -129,6 +144,10 @@ class Parser
     Expressions::NewExpression *ParseNewExpression();
 
     std::vector<std::u32string> ParseNamespacePath();
+
+  private:
+    bool IsNativeFunction(const std::vector<Annotation> &annotations);
+    bool RequiresDeclaration(FunctionParseKind kind, bool isNative, std::string &errorMessage);
 };
 
 }; /* namespace SyntaxAnalysis */
