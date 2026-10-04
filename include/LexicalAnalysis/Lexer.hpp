@@ -47,6 +47,10 @@ class Lexer
 
     Token ReadExponent();
 
+    Token FinishIntegerLiteral();
+
+    Token FinishFloatingPointLiteral();
+
     void ReadDecimalDigits();
 
     Token ReadCharacterLiteral();

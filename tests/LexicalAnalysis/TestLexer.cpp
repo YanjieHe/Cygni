@@ -46,6 +46,42 @@ TEST_CASE("Invalid Exponent", "[Arithmetic]")
     REQUIRE_THROWS_AS(Tokenize("source-code-file", U"1.23E+"), LexicalException);
 }
 
+TEST_CASE("numeric literal suffixes", "[Arithmetic][NumericLiteral]")
+{
+    std::vector<Token> tokens =
+        Tokenize("source-code-file", U"42 42L 42F 42D 3.14 3.14F 3.14D 1E10 1E10F 1E10D");
+
+    std::vector<TokenTag> expectedTags = {
+        TokenTag::Integer, TokenTag::Integer, TokenTag::Float, TokenTag::Float, TokenTag::Float, TokenTag::Float,
+        TokenTag::Float,   TokenTag::Float,   TokenTag::Float, TokenTag::Float, TokenTag::Eof};
+
+    RequireTags(tokens, expectedTags);
+
+    std::vector<std::u32string> expectedTexts = {U"42",    U"42L",   U"42F",    U"42D",   U"3.14", U"3.14F",
+                                                  U"3.14D", U"1E10", U"1E10F", U"1E10D", U"<EOF>"};
+
+    for (size_t i = 0; i < tokens.size(); i++)
+    {
+        REQUIRE(tokens.at(i).text == expectedTexts.at(i));
+    }
+}
+
+TEST_CASE("invalid numeric literal suffixes", "[Arithmetic][NumericLiteral][Error]")
+{
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"42l"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"42f"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"42d"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"3.14f"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"3.14d"), LexicalException);
+
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"3.14L"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"1E10L"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"42LL"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"42FD"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"1E10FD"), LexicalException);
+    REQUIRE_THROWS_AS(Tokenize("source-code-file", U"123abc"), LexicalException);
+}
+
 TEST_CASE("Nested Operations with Mixed Types", "[Arithmetic]")
 {
     std::vector<Token> tokens = Tokenize("source-code-file", U"((5 + 3.5) * (8.0 / 2) - 3 % 2) + 4.5E2 - 0.005E-3");

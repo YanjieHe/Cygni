@@ -330,19 +330,11 @@ ExpPtr Parser::ParseFactor()
     }
     else if (Look().tag == TokenTag::Integer)
     {
-        std::u32string text = Look().text;
-        const Token &start = Look();
-        Advance();
-        int32_t i = stoi(Utility::UTF32ToUTF8(text));
-        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), i, TypeCode::Int32);
+        return ParseIntegerLiteral();
     }
     else if (Look().tag == TokenTag::Float)
     {
-        std::u32string text = Look().text;
-        const Token &start = Look();
-        Advance();
-        double_t d = stod(Utility::UTF32ToUTF8(text));
-        return GetExpressionFactory().Create<ConstantExpression>(Pos(start), d, TypeCode::Float64);
+        return ParseFloatingPointLiteral();
     }
     else if (Look().tag == TokenTag::Character)
     {
@@ -950,6 +942,58 @@ std::vector<std::u32string> Parser::ParseNamespacePath()
     }
 
     return path;
+}
+
+ExpPtr Parser::ParseIntegerLiteral()
+{
+    const Token token = Look();
+    std::u32string text = token.text;
+    Advance();
+
+    if (text.back() == U'L')
+    {
+        text.pop_back();
+
+        int64_t value = static_cast<int64_t>(std::stoll(Utility::UTF32ToUTF8(text)));
+
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(token), value, TypeCode::Int64);
+    }
+    else
+    {
+        int32_t value = static_cast<int32_t>(std::stoi(Utility::UTF32ToUTF8(text)));
+
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(token), value, TypeCode::Int32);
+    }
+}
+
+ExpPtr Parser::ParseFloatingPointLiteral()
+{
+    const Token token = Look();
+    std::u32string text = token.text;
+    Advance();
+
+    if (text.back() == U'F')
+    {
+        text.pop_back();
+
+        float_t value = std::stof(Utility::UTF32ToUTF8(text));
+
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(token), value, TypeCode::Float32);
+    }
+    else if (text.back() == U'D')
+    {
+        text.pop_back();
+
+        double_t value = std::stod(Utility::UTF32ToUTF8(text));
+
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(token), value, TypeCode::Float64);
+    }
+    else
+    {
+        double_t value = std::stod(Utility::UTF32ToUTF8(text));
+
+        return GetExpressionFactory().Create<ConstantExpression>(Pos(token), value, TypeCode::Float64);
+    }
 }
 
 }; /* namespace SyntaxAnalysis */

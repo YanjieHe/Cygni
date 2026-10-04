@@ -89,6 +89,103 @@ TEST_CASE("modulo expression can be used in an if condition", "[Arithmetic][Modu
     REQUIRE(moduloExp->Right()->NodeType() == ExpressionType::Parameter);
 }
 
+TEST_CASE("parse long literal suffix", "[Parser][NumericLiteral]")
+{
+    CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"42L");
+
+    auto expression = parser.ParseExpr();
+    REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+    auto constant = static_cast<ConstantExpression *>(expression);
+    REQUIRE(constant->GetTypeCode() == TypeCode::Int64);
+    REQUIRE(std::get<int64_t>(constant->Value()) == 42);
+}
+
+TEST_CASE("parse float literal suffix", "[Parser][NumericLiteral]")
+{
+    SECTION("integer-shaped float literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"42F");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float32);
+        REQUIRE(std::get<float_t>(constant->Value()) == Approx(42.0F));
+    }
+
+    SECTION("fractional float literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"3.14F");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float32);
+        REQUIRE(std::get<float_t>(constant->Value()) == Approx(3.14F));
+    }
+
+    SECTION("exponential float literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"1E2F");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float32);
+        REQUIRE(std::get<float_t>(constant->Value()) == Approx(100.0F));
+    }
+}
+
+TEST_CASE("parse double literal suffix", "[Parser][NumericLiteral]")
+{
+    SECTION("integer-shaped double literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"42D");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float64);
+        REQUIRE(std::get<double_t>(constant->Value()) == Approx(42.0));
+    }
+
+    SECTION("fractional double literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"3.14D");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float64);
+        REQUIRE(std::get<double_t>(constant->Value()) == Approx(3.14));
+    }
+
+    SECTION("exponential double literal")
+    {
+        CompilationContext compilationContext;
+        Parser parser = CreateParser(compilationContext, U"1E2D");
+
+        auto expression = parser.ParseExpr();
+        REQUIRE(expression->NodeType() == ExpressionType::Constant);
+
+        auto constant = static_cast<ConstantExpression *>(expression);
+        REQUIRE(constant->GetTypeCode() == TypeCode::Float64);
+        REQUIRE(std::get<double_t>(constant->Value()) == Approx(100.0));
+    }
+}
+
 TEST_CASE("unary minus binds tighter than multiply", "[Unary]")
 {
     CompilationContext compilationContext;

@@ -76,9 +76,13 @@ Token Lexer::ReadInt()
             Consume();
             return ReadFloat();
         }
+        else if (Peek() == U'E' || Peek() == U'e')
+        {
+            return ReadExponent();
+        }
         else
         {
-            return Token(sourceCodeFile, line, column, TokenTag::Integer, builder);
+            return FinishIntegerLiteral();
         }
     }
 }
@@ -98,7 +102,7 @@ Token Lexer::ReadFloat()
         }
         else
         {
-            return Token(sourceCodeFile, line, column, TokenTag::Float, builder);
+            return FinishFloatingPointLiteral();
         }
     }
 }
@@ -123,7 +127,62 @@ Token Lexer::ReadExponent()
     else
     {
         ReadDecimalDigits();
+        return FinishFloatingPointLiteral();
+    }
+}
+
+Token Lexer::FinishIntegerLiteral()
+{
+    if (IsEof())
+    {
+        return Token(sourceCodeFile, line, column, TokenTag::Integer, builder);
+    }
+    else
+    {
+        TokenTag tag = TokenTag::Integer;
+        if (Peek() == U'L')
+        {
+            Consume();
+        }
+        else if (Peek() == U'F' || Peek() == U'D')
+        {
+            Consume();
+            tag = TokenTag::Float;
+        }
+        if (!IsEof() && IsIdentifierChar(Peek()))
+        {
+            throw LexicalException(sourceCodeFile, line, column,
+                                   Format(U"invalid character '{}' after numeric literal", Peek()));
+        }
+        else
+        {
+            return Token(sourceCodeFile, line, column, tag, builder);
+        }
+    }
+}
+
+Token Lexer::FinishFloatingPointLiteral()
+{
+    if (IsEof())
+    {
         return Token(sourceCodeFile, line, column, TokenTag::Float, builder);
+    }
+    else
+    {
+        if (Peek() == U'F' || Peek() == U'D')
+        {
+            Consume();
+        }
+
+        if (!IsEof() && IsIdentifierChar(Peek()))
+        {
+            throw LexicalException(sourceCodeFile, line, column,
+                                   Format(U"invalid character '{}' after floating-point literal", Peek()));
+        }
+        else
+        {
+            return Token(sourceCodeFile, line, column, TokenTag::Float, builder);
+        }
     }
 }
 

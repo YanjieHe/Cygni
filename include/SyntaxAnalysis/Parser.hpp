@@ -148,6 +148,8 @@ class Parser
   private:
     bool IsNativeFunction(const std::vector<Annotation> &annotations);
     bool RequiresDeclaration(FunctionParseKind kind, bool isNative, std::string &errorMessage);
+    ExpPtr ParseIntegerLiteral();
+    ExpPtr ParseFloatingPointLiteral();
 };
 
 }; /* namespace SyntaxAnalysis */
