@@ -574,7 +574,35 @@ const Type *TypeChecker::VisitNew(const NewExpression *node, Scope<const Type *>
 const Type *TypeChecker::VisitMember(const MemberExpression *node, Scope<const Type *> *scope)
 {
     const Type *type = Visit(node->GetExpression(), scope);
-    if (type->GetTypeCode() == TypeCode::Structure)
+    if (type->GetTypeCode() == TypeCode::String)
+    {
+        if (node->FieldName() == U"length")
+        {
+            return Register(node, TypeFactory::CreateBasicType(TypeCode::Int32));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Field '" + Utility::UTF32ToUTF8(node->FieldName()) +
+                                    "' is not defined on type 'String'.",
+                                node, nullptr);
+        }
+    }
+    else if (type->GetTypeCode() == TypeCode::Array)
+    {
+        if (node->FieldName() == U"length")
+        {
+            return Register(node, TypeFactory::CreateBasicType(TypeCode::Int32));
+        }
+        else
+        {
+            throw TreeException(__FILE__, __LINE__,
+                                "Field '" + Utility::UTF32ToUTF8(node->FieldName()) +
+                                    "' is not defined on type 'Array'.",
+                                node, nullptr);
+        }
+    }
+    else if (type->GetTypeCode() == TypeCode::Structure)
     {
         const StructureType *structureType = static_cast<const StructureType *>(type);
         if (structureType->Fields().ContainsKey(node->FieldName()))
@@ -596,13 +624,12 @@ const Type *TypeChecker::VisitMember(const MemberExpression *node, Scope<const T
     }
     else
     {
-        /* TODO: string */
         spdlog::error("The type of object that the expression is trying to access is not supported.");
 
         throw TreeException(__FILE__, __LINE__,
                             "Cannot access field '" + Utility::UTF32ToUTF8(node->FieldName()) + "' on type '" +
                                 Utility::EnumToString(type->GetTypeCode()) +
-                                "'. Member access is only supported on structures.",
+                                "'. Member access is only supported on structures, strings, and arrays.",
                             node, nullptr);
     }
 }
@@ -1048,8 +1075,18 @@ const Type *TypeChecker::CheckAssignment(const BinaryExpression *node, Scope<con
     {
         /* TODO: check if the field is modifiable. */
         const Type *left = Visit(node->Left(), scope);
+        const MemberExpression *memberAccess = static_cast<const MemberExpression *>(node->Left());
+        const Type *receiverType = GetType(memberAccess->GetExpression());
 
-        if (TypeFactory::AreTypesEqual(left, right) || Types.IsSubtype(right, left))
+        if (receiverType->GetTypeCode() == TypeCode::String && memberAccess->FieldName() == U"length")
+        {
+            throw TreeException(__FILE__, __LINE__, "Field 'length' on type 'String' is read-only.", node, nullptr);
+        }
+        else if (receiverType->GetTypeCode() == TypeCode::Array && memberAccess->FieldName() == U"length")
+        {
+            throw TreeException(__FILE__, __LINE__, "Field 'length' on type 'Array' is read-only.", node, nullptr);
+        }
+        else if (TypeFactory::AreTypesEqual(left, right) || Types.IsSubtype(right, left))
         {
             return Register(node, TypeFactory::CreateBasicType(TypeCode::Empty));
         }
@@ -1146,10 +1183,11 @@ const Type *TypeChecker::VisitMethodCall(const CallExpression *node, Scope<const
             else if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
             {
                 const Type *fieldType = structureType->Fields().GetItemByKey(memberAccess->FieldName());
+                Register(memberAccess, fieldType);
+
                 if (fieldType->GetTypeCode() == TypeCode::Callable)
                 {
                     const CallableType *callableFieldType = static_cast<const CallableType *>(fieldType);
-                    Register(memberAccess, callableFieldType);
 
                     return CheckArguments(node, callableFieldType, scope);
                 }

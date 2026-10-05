@@ -263,6 +263,38 @@ void Compiler::VisitBinary(const BinaryExpression *node, ByteCode &byteCode,
             }
             break;
         }
+        case TypeCode::String: {
+            switch (node->NodeType())
+            {
+            case ExpressionType::GreaterThan:
+                byteCode.AddOp(OpCode::GT_STRING);
+                break;
+            case ExpressionType::GreaterThanOrEqual:
+                byteCode.AddOp(OpCode::GE_STRING);
+                break;
+            case ExpressionType::LessThan:
+                byteCode.AddOp(OpCode::LT_STRING);
+                break;
+            case ExpressionType::LessThanOrEqual:
+                byteCode.AddOp(OpCode::LE_STRING);
+                break;
+            case ExpressionType::Equal:
+                byteCode.AddOp(OpCode::EQ_STRING);
+                break;
+            case ExpressionType::NotEqual:
+                byteCode.AddOp(OpCode::NE_STRING);
+                break;
+
+            default: {
+                spdlog::error("Unsupported binary expression type for string type operands.");
+
+                throw TreeException(__FILE__, __LINE__, "Unsupported binary expression type for string type operands.",
+                                    node, nullptr);
+            }
+            }
+
+            break;
+        }
         default: {
             throw CompilationException(__FILE__, __LINE__, "Unsupported binary expression type", node, nullptr);
         }
@@ -694,99 +726,106 @@ void Compiler::VisitConditional(const ConditionalExpression *node, ByteCode &byt
 void Compiler::VisitCall(const CallExpression *node, ByteCode &byteCode,
                          std::vector<flint_bytecode::Constant> &constantPool)
 {
-    if (node->Function()->NodeType() == ExpressionType::MemberAccess)
+    const Expression *callee = node->Function();
+    const Type *calleeType = typeChecker.GetType(callee);
+
+    if (calleeType->GetTypeCode() == TypeCode::String)
+    {
+        Visit(callee, byteCode, constantPool);
+        Visit(node->Arguments().front(), byteCode, constantPool);
+        byteCode.AddOp(OpCode::PUSH_STRING_CHAR);
+    }
+    else if (calleeType->GetTypeCode() == TypeCode::Array)
+    {
+        Visit(callee, byteCode, constantPool);
+        for (const Expression *argument : node->Arguments())
+        {
+            Visit(argument, byteCode, constantPool);
+        }
+
+        const ArrayType *arrayType = static_cast<const ArrayType *>(calleeType);
+        switch (arrayType->ElementType()->GetTypeCode())
+        {
+        case TypeCode::Boolean:
+        case TypeCode::Char:
+        case TypeCode::Int32: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_I32);
+            break;
+        }
+        case TypeCode::Int64: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_I64);
+            break;
+        }
+        case TypeCode::Float32: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_F32);
+            break;
+        }
+        case TypeCode::Float64: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_F64);
+            break;
+        }
+        case TypeCode::String:
+        case TypeCode::Structure:
+        case TypeCode::Callable:
+        case TypeCode::Array:
+        case TypeCode::Interface: {
+            byteCode.AddOp(OpCode::PUSH_ARRAY_OBJECT);
+            break;
+        }
+        default: {
+            spdlog::error("Unsupported array element type for array access.");
+
+            throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array access.", node,
+                                       nullptr);
+        }
+        }
+    }
+    else if (callee->NodeType() == ExpressionType::MemberAccess)
     {
         VisitMethodCall(node, byteCode, constantPool);
     }
     else
     {
-        const Type *functionType = typeChecker.GetType(node->Function());
-        if (functionType->GetTypeCode() == TypeCode::Array)
+        for (const Expression *argument : node->Arguments())
         {
-            Visit(node->Function(), byteCode, constantPool);
-            for (const Expression *argument : node->Arguments())
+            Visit(argument, byteCode, constantPool);
+        }
+        if (node->Function()->NodeType() == ExpressionType::Parameter)
+        {
+            if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
             {
-                Visit(argument, byteCode, constantPool);
+                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
+                byteCode.AddOp(OpCode::INVOKE_FUNCTION);
+                byteCode.AddByte(constantPool.size());
+                constantPool.push_back(
+                    flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
             }
-            const ArrayType *arrayType = static_cast<const ArrayType *>(functionType);
-            switch (arrayType->ElementType()->GetTypeCode())
+            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
             {
-            case TypeCode::Boolean:
-            case TypeCode::Char:
-            case TypeCode::Int32: {
-                byteCode.AddOp(OpCode::PUSH_ARRAY_I32);
-                break;
+                const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
+                byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
+                byteCode.AddByte(constantPool.size());
+                constantPool.push_back(flint_bytecode::Constant(
+                    flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION, nameInfo.Number()));
             }
-            case TypeCode::Int64: {
-                byteCode.AddOp(OpCode::PUSH_ARRAY_I64);
-                break;
+            else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
+            {
+                Visit(node->Function(), byteCode, constantPool);
+                byteCode.AddOp(OpCode::INVOKE_CLOSURE);
             }
-            case TypeCode::Float32: {
-                byteCode.AddOp(OpCode::PUSH_ARRAY_F32);
-                break;
-            }
-            case TypeCode::Float64: {
-                byteCode.AddOp(OpCode::PUSH_ARRAY_F64);
-                break;
-            }
-            case TypeCode::String:
-            case TypeCode::Structure:
-            case TypeCode::Callable:
-            case TypeCode::Array: {
-                byteCode.AddOp(OpCode::PUSH_ARRAY_OBJECT);
-                break;
-            }
-            default: {
-                spdlog::error("Unsupported array element type for array access.");
-
-                throw CompilationException(__FILE__, __LINE__, "Unsupported array element type for array access.", node,
+            else
+            {
+                spdlog::error("Unsupported call expression location kind.");
+                throw CompilationException(__FILE__, __LINE__, "Unsupported call expression location kind.", node,
                                            nullptr);
-            }
             }
         }
         else
         {
-            for (const Expression *argument : node->Arguments())
-            {
-                Visit(argument, byteCode, constantPool);
-            }
-            if (node->Function()->NodeType() == ExpressionType::Parameter)
-            {
-                if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::Function))
-                {
-                    const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::Function);
-                    byteCode.AddOp(OpCode::INVOKE_FUNCTION);
-                    byteCode.AddByte(constantPool.size());
-                    constantPool.push_back(flint_bytecode::Constant(
-                        flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
-                }
-                else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::NativeFunction))
-                {
-                    const NameInfo &nameInfo = nameLocator.GetNameInfo(node->Function(), LocationKind::NativeFunction);
-                    byteCode.AddOp(OpCode::INVOKE_NATIVE_FUNCTION);
-                    byteCode.AddByte(constantPool.size());
-                    constantPool.push_back(flint_bytecode::Constant(
-                        flint_bytecode::ConstantKind::CONSTANT_KIND_NATIVE_FUNCTION, nameInfo.Number()));
-                }
-                else if (nameLocator.ExistsNameInfo(node->Function(), LocationKind::FunctionVariable))
-                {
-                    Visit(node->Function(), byteCode, constantPool);
-                    byteCode.AddOp(OpCode::INVOKE_CLOSURE);
-                }
-                else
-                {
-                    spdlog::error("Unsupported call expression location kind.");
-                    throw CompilationException(__FILE__, __LINE__, "Unsupported call expression location kind.", node,
-                                               nullptr);
-                }
-            }
-            else
-            {
-                spdlog::error("Unsupported call expression type. Got node type: {}",
-                              Utility::EnumToString(node->Function()->NodeType()));
+            spdlog::error("Unsupported call expression type. Got node type: {}",
+                          Utility::EnumToString(node->Function()->NodeType()));
 
-                throw CompilationException(__FILE__, __LINE__, "Unsupported call expression type", node, nullptr);
-            }
+            throw CompilationException(__FILE__, __LINE__, "Unsupported call expression type", node, nullptr);
         }
     }
 }
@@ -947,7 +986,9 @@ void Compiler::VisitNew(const NewExpression *node, ByteCode &byteCode,
         }
         case TypeCode::String:
         case TypeCode::Structure:
-        case TypeCode::Interface: {
+        case TypeCode::Interface:
+        case TypeCode::Array:
+        case TypeCode::Callable: {
             byteCode.AddOp(OpCode::POP_FIELD_OBJECT);
             byteCode.AddByte(static_cast<Byte>(index));
             break;
@@ -999,7 +1040,9 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
             }
             case TypeCode::String:
             case TypeCode::Structure:
-            case TypeCode::Interface: {
+            case TypeCode::Interface:
+            case TypeCode::Array:
+            case TypeCode::Callable: {
                 byteCode.AddOp(OpCode::PUSH_FIELD_OBJECT);
                 byteCode.AddByte(static_cast<Byte>(index));
                 break;
@@ -1016,6 +1059,34 @@ void Compiler::VisitMember(const MemberExpression *node, ByteCode &byteCode,
             spdlog::error("Field '{}' doesn't exist.", Utility::UTF32ToUTF8(node->FieldName()));
 
             throw CompilationException(__FILE__, __LINE__, "Field doesn't exist.", node, nullptr);
+        }
+    }
+    else if (type->GetTypeCode() == TypeCode::String)
+    {
+        if (node->FieldName() == U"length")
+        {
+            byteCode.AddOp(OpCode::STRING_LENGTH);
+        }
+        else
+        {
+            throw CompilationException(__FILE__, __LINE__,
+                                       "Field '" + Utility::UTF32ToUTF8(node->FieldName()) +
+                                           "' is not defined on type 'String'.",
+                                       node, nullptr);
+        }
+    }
+    else if (type->GetTypeCode() == TypeCode::Array)
+    {
+        if (node->FieldName() == U"length")
+        {
+            byteCode.AddOp(OpCode::ARRAY_LENGTH);
+        }
+        else
+        {
+            throw CompilationException(__FILE__, __LINE__,
+                                       "Field '" + Utility::UTF32ToUTF8(node->FieldName()) +
+                                           "' is not defined on type 'Array'.",
+                                       node, nullptr);
         }
     }
     else
@@ -1632,19 +1703,32 @@ void Compiler::VisitMethodCall(const CallExpression *node, ByteCode &byteCode,
         if (type->GetTypeCode() == TypeCode::Structure)
         {
             const StructureType *structureType = static_cast<const StructureType *>(type);
-            Visit(memberAccess->GetExpression(), byteCode, constantPool);
-            for (const auto &argument : node->Arguments())
+            if (structureType->Methods().ContainsKey(memberAccess->FieldName()))
             {
-                Visit(argument, byteCode, constantPool);
+                Visit(memberAccess->GetExpression(), byteCode, constantPool);
+                for (const auto &argument : node->Arguments())
+                {
+                    Visit(argument, byteCode, constantPool);
+                }
+                byteCode.AddOp(OpCode::INVOKE_FUNCTION);
+                StructureExpression *structDef =
+                    namespaceFactory.SearchStructure(namespaceStack.top(), structureType->QualifiedName());
+                LambdaExpression *methodDef = structDef->Methods().GetItemByKey(memberAccess->FieldName());
+                const NameInfo &nameInfo = nameLocator.GetNameInfo(methodDef, LocationKind::Function);
+                byteCode.AddByte(constantPool.size());
+                constantPool.push_back(
+                    flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
             }
-            byteCode.AddOp(OpCode::INVOKE_FUNCTION);
-            StructureExpression *structDef =
-                namespaceFactory.SearchStructure(namespaceStack.top(), structureType->QualifiedName());
-            LambdaExpression *methodDef = structDef->Methods().GetItemByKey(memberAccess->FieldName());
-            const NameInfo &nameInfo = nameLocator.GetNameInfo(methodDef, LocationKind::Function);
-            byteCode.AddByte(constantPool.size());
-            constantPool.push_back(
-                flint_bytecode::Constant(flint_bytecode::ConstantKind::CONSTANT_KIND_FUNCTION, nameInfo.Number()));
+            else if (structureType->Fields().ContainsKey(memberAccess->FieldName()))
+            {
+                const Type *fieldType = structureType->Fields().GetItemByKey(memberAccess->FieldName());
+                if (fieldType->GetTypeCode() == TypeCode::Callable)
+                {
+                    throw CompilationException(__FILE__, __LINE__,
+                                               "Invoking a callable structure field is not currently supported.", node,
+                                               nullptr);
+                }
+            }
         }
         else if (type->GetTypeCode() == TypeCode::Interface)
         {

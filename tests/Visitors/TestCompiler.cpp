@@ -805,3 +805,125 @@ TEST_CASE("inherited interface method call uses derived interface flattened slot
     REQUIRE(reference.InterfaceIndex() == 1); // Character
     REQUIRE(reference.MethodIndex() == 0);    // inherited Entity::id
 }
+
+// ============================================================================
+// String and Array Index Access Tests
+// ============================================================================
+
+TEST_CASE("string parameter index emits string character access", "[Compiler][String][Index]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module M { "
+        U"  func characterAt(value: String, index: Int): Char { value(index); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *characterAt = FindCompiledFunction(program, "characterAt");
+    REQUIRE(characterAt != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = characterAt->Code().GetBytes();
+    REQUIRE(code.size() == 6);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0); // value parameter
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_I32));
+    REQUIRE(code[3] == 1); // index parameter
+    REQUIRE(code[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_STRING_CHAR));
+    REQUIRE(code[5] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+}
+
+TEST_CASE("array parameter index emits element access", "[Compiler][Array][Index]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module M { "
+        U"  func elementAt(values: Array[Int], index: Int): Int { values(index); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *elementAt = FindCompiledFunction(program, "elementAt");
+    REQUIRE(elementAt != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = elementAt->Code().GetBytes();
+    REQUIRE(code.size() == 6);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0); // values parameter
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_I32));
+    REQUIRE(code[3] == 1); // index parameter
+    REQUIRE(code[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_ARRAY_I32));
+    REQUIRE(code[5] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+}
+
+TEST_CASE("string and array field indexes load fields before indexing",
+          "[Compiler][Structure][MemberAccess][Index]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module M { "
+        U"  struct Container { text: String; values: Array[Int]; } "
+        U"  func characterAt(container: Container, index: Int): Char { container.text(index); } "
+        U"  func elementAt(container: Container, index: Int): Int { container.values(index); } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *characterAt = FindCompiledFunction(program, "characterAt");
+    REQUIRE(characterAt != nullptr);
+    const std::vector<flint_bytecode::Byte> &stringCode = characterAt->Code().GetBytes();
+    REQUIRE(stringCode.size() == 8);
+    REQUIRE(stringCode[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(stringCode[1] == 0); // container parameter
+    REQUIRE(stringCode[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_FIELD_OBJECT));
+    REQUIRE(stringCode[3] == 0); // Container::text
+    REQUIRE(stringCode[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_I32));
+    REQUIRE(stringCode[5] == 1); // index parameter
+    REQUIRE(stringCode[6] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_STRING_CHAR));
+    REQUIRE(stringCode[7] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+
+    const flint_bytecode::Function *elementAt = FindCompiledFunction(program, "elementAt");
+    REQUIRE(elementAt != nullptr);
+    const std::vector<flint_bytecode::Byte> &arrayCode = elementAt->Code().GetBytes();
+    REQUIRE(arrayCode.size() == 8);
+    REQUIRE(arrayCode[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(arrayCode[1] == 0); // container parameter
+    REQUIRE(arrayCode[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_FIELD_OBJECT));
+    REQUIRE(arrayCode[3] == 1); // Container::values
+    REQUIRE(arrayCode[4] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_I32));
+    REQUIRE(arrayCode[5] == 1); // index parameter
+    REQUIRE(arrayCode[6] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_ARRAY_I32));
+    REQUIRE(arrayCode[7] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+}
+
+TEST_CASE("string length emits string length opcode", "[Compiler][String][MemberAccess][Length]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module M { "
+        U"  func length(value: String): Int { value.length; } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *length = FindCompiledFunction(program, "length");
+    REQUIRE(length != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = length->Code().GetBytes();
+    REQUIRE(code.size() == 4);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0);
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::STRING_LENGTH));
+    REQUIRE(code[3] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+}
+
+TEST_CASE("array length emits array length opcode", "[Compiler][Array][MemberAccess][Length]")
+{
+    flint_bytecode::ByteCodeProgram program = CompileProgram(
+        U"module M { "
+        U"  func length(values: Array[Int]): Int { values.length; } "
+        U"  func Main(): Int { 0; } "
+        U"}");
+
+    const flint_bytecode::Function *length = FindCompiledFunction(program, "length");
+    REQUIRE(length != nullptr);
+
+    const std::vector<flint_bytecode::Byte> &code = length->Code().GetBytes();
+    REQUIRE(code.size() == 4);
+    REQUIRE(code[0] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::PUSH_LOCAL_OBJECT));
+    REQUIRE(code[1] == 0);
+    REQUIRE(code[2] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::ARRAY_LENGTH));
+    REQUIRE(code[3] == static_cast<flint_bytecode::Byte>(flint_bytecode::OpCode::RETURN_I32));
+}

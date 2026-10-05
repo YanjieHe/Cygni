@@ -7,7 +7,7 @@ Cygni is a statically-typed, expression-oriented programming language that compi
 ### 1.1 Keywords
 
 ```
-module  func  var  struct  if  else  while  new  true  false
+module  func  var  struct  if  else  while  new  true  false  and  or  not
 ```
 
 ### 1.2 Operators
@@ -16,7 +16,7 @@ module  func  var  struct  if  else  while  new  true  false
 |----------|-----------|
 | Arithmetic | `+`  `-`  `*`  `/`  `%` |
 | Comparison | `==`  `!=`  `>`  `>=`  `<`  `<=` |
-| Logical | `&&`  `\|\|`  `!` |
+| Logical | `and`  `or`  `not` |
 | Assignment | `=` |
 | Scope Resolution | `::` |
 | Member Access | `.` |

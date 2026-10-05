@@ -1234,3 +1234,143 @@ TEST_CASE("type check field access returns correct type", "[Structure][MemberAcc
     Scope<const Type *> scope;
     REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
 }
+
+// ============================================================================
+// String and Array Index Access Tests
+// ============================================================================
+
+TEST_CASE("type check string index access returns char", "[String][Index]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func CharacterAt(value: String, index: Int): Char { "
+                                                     U"  value(index); "
+                                                     U"} "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check array index access returns element type", "[Array][Index]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func ElementAt(values: Array[Int], index: Int): Int { "
+                                                     U"  values(index); "
+                                                     U"} "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check string and array field index access", "[Structure][MemberAccess][Index]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"struct Container { text: String; values: Array[Int]; } "
+                                                     U"func CharacterAt(container: Container, index: Int): Char { "
+                                                     U"  container.text(index); "
+                                                     U"} "
+                                                     U"func ElementAt(container: Container, index: Int): Int { "
+                                                     U"  container.values(index); "
+                                                     U"} "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check string length returns int", "[String][MemberAccess][Length]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Length(value: String): Int { value.length; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check array length returns int", "[Array][MemberAccess][Length]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Length(values: Array[Int]): Int { values.length; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_NOTHROW(typeChecker.CheckNamespace(&scope));
+}
+
+TEST_CASE("type check rejects unknown string field", "[String][MemberAccess][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Invalid(value: String): Int { value.missing; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check rejects unknown array field", "[Array][MemberAccess][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Invalid(values: Array[Int]): Int { values.missing; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check rejects assignment to string length", "[String][MemberAccess][Assignment][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Invalid(value: String): Void { value.length = 1; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
+
+TEST_CASE("type check rejects assignment to array length", "[Array][MemberAccess][Assignment][Error]")
+{
+    Cygni::Compilation::CompilationContext compilationContext;
+    Parser parser = CreateParser(compilationContext, U"module M { "
+                                                     U"func Invalid(values: Array[Int]): Void { values.length = 1; } "
+                                                     U"func Main(): Int { 0; } "
+                                                     U"}");
+    parser.ParseNamespace();
+    TypeChecker typeChecker(parser.GetNamespaceFactory(), parser.GetExpressionFactory());
+
+    Scope<const Type *> scope;
+    REQUIRE_THROWS_AS(typeChecker.CheckNamespace(&scope), TreeException);
+}
