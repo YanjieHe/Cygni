@@ -6,6 +6,8 @@ The project is a learning-oriented compiler and language-design project. Its syn
 
 ## Example
 
+A basic expression-oriented function:
+
 ```cygni
 module Example {
     func Max(a: Int, b: Int): Int {
@@ -17,6 +19,39 @@ module Example {
     }
 }
 ```
+
+Structures can implement interfaces and be used through interface types:
+
+```cygni
+module Example {
+    interface Shape {
+        func area(): Int;
+    }
+
+    struct Rectangle <: Shape {
+        width: Int;
+        height: Int;
+
+        func area(): Int {
+            this.width * this.height;
+        }
+    }
+
+    func Measure(shape: Shape): Int {
+        shape.area();
+    }
+
+    func Main(): Int {
+        var rectangle = new Rectangle {
+            width = 6;
+            height = 7;
+        };
+        Measure(rectangle);
+    }
+}
+```
+
+`Rectangle` implements `Shape`, so it can be passed through the interface type and dispatched dynamically. The program evaluates to `42`.
 
 Cygni currently supports modules and multi-file compilation, primitive types, block and conditional expressions, loops, structures, interfaces with dynamic dispatch, native functions, Unicode strings, and typed array access. General generics, nested lambdas, and source-level array construction and literals are not complete yet.
 
